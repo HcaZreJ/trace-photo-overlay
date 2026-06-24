@@ -50,7 +50,8 @@ h1 .em{color:var(--accent)}
 .ctrl-row{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:13px;color:var(--sub)}
 .ctrl-row label{min-width:42px}
 input[type=range]{flex:1;accent-color:var(--accent)}
-input[type=color]{width:38px;height:30px;border:1px solid var(--border);border-radius:8px;background:none;cursor:pointer;padding:2px}
+input[type=color]{width:38px;height:30px;border:1px solid var(--border);border-radius:8px;background:none;cursor:pointer;padding:2px;flex:none}
+.hex{width:84px;flex:none;background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:8px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .swatches{display:flex;gap:6px}
 .swatch{width:22px;height:22px;border-radius:6px;cursor:pointer;border:2px solid transparent}
 .swatch.on{border-color:#fff}
@@ -171,6 +172,7 @@ input[type=color]{width:38px;height:30px;border:1px solid var(--border);border-r
           <label>颜色</label>
           <div class="swatches" id="swatches"></div>
           <input type="color" id="trackColor" value="#fb923c">
+          <input type="text" id="trackColorHex" class="hex" value="#fb923c">
         </div>
         <div class="ctrl-row">
           <label>线宽</label>
@@ -217,6 +219,14 @@ input[type=color]{width:38px;height:30px;border:1px solid var(--border);border-r
       <input type="text" id="textDate" placeholder="日期，如 2026.06.24（可留空）">
       <div class="metrics-hint">勾选要显示的数据 · 导入轨迹自动算填。距离最准；时长 / 均速对多日轨迹是估算，建议手改为 App 里的官方值。</div>
       <div class="metrics-grid" id="metricsGrid"></div>
+      <div class="ctrl-row">
+        <label>文字</label>
+        <input type="color" id="textColorPick" value="#ffffff">
+        <input type="text" id="textColorHex" class="hex" value="#ffffff">
+        <label style="margin-left:14px">描边</label>
+        <input type="color" id="strokeColorPick" value="#000000">
+        <input type="text" id="strokeColorHex" class="hex" value="#000000">
+      </div>
       <div class="ctrl-row"><label>位置</label><select id="textCell"></select></div>
     </div>
   </section>
@@ -294,7 +304,7 @@ const METRICS=[
   {key:'distance',label:'距离'},{key:'duration',label:'时长'},
   {key:'speed',label:'均速'},{key:'pace',label:'配速'},{key:'elevation',label:'爬升'},
 ];
-let textOverlay={ enabled:false, cell:0, title:'', date:'',
+let textOverlay={ enabled:false, cell:0, title:'', date:'', textColor:'#ffffff', strokeColor:'#000000',
   metrics:{ distance:{show:true,value:''}, duration:{show:true,value:''},
             speed:{show:false,value:''}, pace:{show:false,value:''}, elevation:{show:true,value:''} } };
 const imageCache = new Map();
@@ -708,20 +718,23 @@ function drawTextCard(ctx){
     lines.push({text:it.label,size:L*0.043,dim:1,gap:L*0.034});
     lines.push({text:it.value,size:L*0.078,bold:1,gap:L*0.007});
   }
-  let totalH=0; for(const ln of lines) totalH+=ln.gap+ln.size;
   const pad=L*0.06;
+  let totalH=0; for(const ln of lines) totalH+=ln.gap+ln.size;
+  // 内容过多超出图片时整体等比缩小字号，塞进可用高度
+  const maxH=h-pad*2;
+  if(totalH>maxH){ const s=maxH/totalH; for(const ln of lines){ ln.size*=s; ln.gap*=s; } totalH=maxH; }
   let y=h-pad-totalH;
   ctx.save();
   ctx.textAlign='left'; ctx.textBaseline='top'; ctx.lineJoin='round'; ctx.miterLimit=2;
   for(const ln of lines){
     y+=ln.gap;
     ctx.font=`${ln.bold?800:600} ${Math.round(ln.size)}px "PingFang SC","Microsoft YaHei",sans-serif`;
-    // 描边+阴影保证任意背景可读，不再压暗整张图
-    ctx.lineWidth=Math.max(2,ln.size*0.1); ctx.strokeStyle='rgba(0,0,0,0.5)';
-    ctx.shadowColor='rgba(0,0,0,0.55)'; ctx.shadowBlur=L*0.02; ctx.shadowOffsetY=L*0.0025;
-    ctx.strokeText(ln.text,pad,y);
+    // 描边+阴影保证任意背景可读，不压暗整张图；颜色由用户选取
+    ctx.lineWidth=Math.max(2,ln.size*0.1); ctx.strokeStyle=t.strokeColor;
+    ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=L*0.02; ctx.shadowOffsetY=L*0.0025;
+    ctx.globalAlpha=1; ctx.strokeText(ln.text,pad,y);
     ctx.shadowColor='transparent';
-    ctx.fillStyle=ln.dim?'rgba(255,255,255,0.95)':'#fff';
+    ctx.fillStyle=t.textColor; ctx.globalAlpha=ln.dim?0.92:1;
     ctx.fillText(ln.text,pad,y);
     y+=ln.size;
   }
@@ -897,7 +910,7 @@ function init(){
   const sw=$('swatches');
   SWATCH_COLORS.forEach(col=>{
     const d=document.createElement('div'); d.className='swatch'; d.style.background=col; d.dataset.col=col;
-    d.addEventListener('click',()=>{ $('trackColor').value=col; syncSwatch(); rebuildOverlay(); renderTrackThumb(); updatePreview(); });
+    d.addEventListener('click',()=>{ $('trackColor').value=col; $('trackColorHex').value=col; syncSwatch(); rebuildOverlay(); renderTrackThumb(); updatePreview(); });
     sw.appendChild(d);
   });
   syncSwatch();
@@ -907,7 +920,9 @@ function init(){
   $('trackInput').addEventListener('change',e=>{ if(e.target.files.length) loadTrackFiles(Array.from(e.target.files)); e.target.value=''; });
   bindDrop($('trackDrop'),f=>/\.(gpx|kml|geojson|json|tcx|xml|csv|txt|fit)$/i.test(f.name),fs=>loadTrackFiles(fs));
   $('fileList').addEventListener('click',e=>{ const b=e.target.closest('button[data-act]'); if(b) trackFileAction(b.dataset.act,+b.dataset.i); });
-  $('trackColor').addEventListener('input',()=>{ syncSwatch(); rebuildOverlay(); renderTrackThumb(); updatePreview(); });
+  bindColorPair('trackColor','trackColorHex',()=>{ syncSwatch(); rebuildOverlay(); renderTrackThumb(); updatePreview(); });
+  bindColorPair('textColorPick','textColorHex',v=>{ textOverlay.textColor=v; updatePreview(); });
+  bindColorPair('strokeColorPick','strokeColorHex',v=>{ textOverlay.strokeColor=v; updatePreview(); });
   $('trackWidth').addEventListener('input',debounce(()=>{ rebuildOverlay(); renderTrackThumb(); updatePreview(); },120));
   $('trackClear').addEventListener('click',clearTrack);
 
@@ -959,6 +974,12 @@ function syncSwatch(){
   document.querySelectorAll('.swatch').forEach(s=>s.classList.toggle('on',s.dataset.col.toLowerCase()===cur));
 }
 function debounce(fn,d){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),d); }; }
+// 色块选择器 ↔ hex 文本框 双向联动
+function bindColorPair(pickId,hexId,apply){
+  const pick=$(pickId), hex=$(hexId);
+  pick.addEventListener('input',()=>{ hex.value=pick.value; apply(pick.value); });
+  hex.addEventListener('input',()=>{ let v=hex.value.trim(); if(v&&!v.startsWith('#')) v='#'+v; if(/^#[0-9a-fA-F]{6}$/.test(v)){ pick.value=v; apply(v); } });
+}
 
 init();
 </script>
