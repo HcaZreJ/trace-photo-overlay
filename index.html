@@ -194,7 +194,7 @@ input[type=color]{width:38px;height:30px;border:1px solid var(--border);border-r
     <div class="text-fields" id="textFields">
       <input type="text" id="textTitle" placeholder="标题，如：环青海湖（可留空）">
       <input type="text" id="textDate" placeholder="日期，如 2026.06.24（可留空）">
-      <div class="metrics-hint">勾选要显示的数据 · 导入轨迹后自动填，也可手改</div>
+      <div class="metrics-hint">勾选要显示的数据 · 导入轨迹自动算填。距离最准；时长 / 均速对多日轨迹是估算，建议手改为 App 里的官方值。</div>
       <div class="metrics-grid" id="metricsGrid"></div>
       <div class="ctrl-row"><label>位置</label><select id="textCell"></select></div>
     </div>
@@ -488,12 +488,12 @@ function paceSecPerKm(points){
   if(!sec||!km||km<=0) return null;
   return sec/km;
 }
-function elevationGainM(points,threshold=5){
-  const eles=(points||[]).map(p=>p.ele).filter(e=>typeof e==='number');
-  if(eles.length<2) return null;
-  let gain=0,ref=eles[0];
-  for(let i=1;i<eles.length;i++){ const e=eles[i];
-    if(e-ref>=threshold){ gain+=e-ref; ref=e; } else if(e<ref){ ref=e; } }
+function elevationGainM(points,win=5,threshold=5){
+  const e=(points||[]).map(p=>p.ele).filter(v=>typeof v==='number');
+  if(e.length<2) return null;
+  const sm=e.map((_,i)=>{ let s=0,n=0; const lo=Math.max(0,i-win),hi=Math.min(e.length-1,i+win); for(let j=lo;j<=hi;j++){s+=e[j];n++;} return s/n; });
+  let gain=0,ref=sm[0];
+  for(let i=1;i<sm.length;i++){ if(sm[i]-ref>=threshold){gain+=sm[i]-ref;ref=sm[i];} else if(sm[i]<ref) ref=sm[i]; }
   return Math.round(gain);
 }
 function formatDuration(sec){

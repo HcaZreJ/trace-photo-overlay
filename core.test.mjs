@@ -45,12 +45,14 @@ test('formatPace: 配速格式', () => {
   assert.equal(formatPace(300), `5'00"`);
   assert.equal(formatPace(null), null);
 });
-test('elevationGainM: 真实爬升累加(超阈值)', () => {
-  assert.equal(elevationGainM([{ ele: 100 }, { ele: 110 }, { ele: 105 }, { ele: 120 }, { ele: 118 }]), 25);
+test('elevationGainM: 单调爬升 ≈ 总上升', () => {
+  const pts = Array.from({ length: 101 }, (_, i) => ({ ele: 100 + i })); // 100→200
+  const g = elevationGainM(pts);
+  assert.ok(g > 80 && g < 110, `实际 ${g}`);
 });
-test('elevationGainM: 过滤 GPS 噪声(小幅震荡不计)', () => {
-  assert.equal(elevationGainM([{ ele: 100 }, { ele: 102 }, { ele: 100 }, { ele: 101 }, { ele: 99 }, { ele: 100 }]), 0);
-  assert.ok(Math.abs(elevationGainM([{ ele: 100 }, { ele: 103 }, { ele: 150 }, { ele: 148 }, { ele: 200 }]) - 100) < 10);
+test('elevationGainM: 高频噪声被平滑去除(≈0)', () => {
+  const pts = Array.from({ length: 40 }, (_, i) => ({ ele: 100 + (i % 2) * 3 })); // 100/103 震荡
+  assert.ok(elevationGainM(pts) < 15, `实际 ${elevationGainM(pts)}`);
 });
 test('elevationGainM: 无海拔返回 null', () => {
   assert.equal(elevationGainM([{ lng: 0, lat: 0 }, { lng: 1, lat: 1 }]), null);

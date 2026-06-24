@@ -50,16 +50,21 @@ export function paceSecPerKm(points){
   if(!sec||!km||km<=0) return null;
   return sec/km;
 }
-// 总爬升(米)：迟滞阈值法去噪——只有相对参考点累计上升超过 threshold 才计入，
-// 过滤 GPS 海拔的高频抖动（裸累加会虚高数倍）。仍无法等同气压计+专有算法，可手改。
-export function elevationGainM(points, threshold=5){
-  const eles=(points||[]).map(p=>p.ele).filter(e=>typeof e==='number');
-  if(eles.length<2) return null;
-  let gain=0, ref=eles[0];
-  for(let i=1;i<eles.length;i++){
-    const e=eles[i];
-    if(e-ref>=threshold){ gain+=e-ref; ref=e; }
-    else if(e<ref){ ref=e; }
+// 总爬升(米)：先对海拔做移动平均平滑(窗口±win)去高频抖动，再用迟滞阈值累计上升。
+// 纯累加/纯阈值都会因 GPS 海拔噪声虚高数倍；平滑+阈值更接近运动 App。
+// 仍无法等同气压计+专有算法，多日/导出差异时可手改。
+export function elevationGainM(points, win=5, threshold=5){
+  const e=(points||[]).map(p=>p.ele).filter(v=>typeof v==='number');
+  if(e.length<2) return null;
+  const sm=e.map((_,i)=>{
+    let s=0,n=0; const lo=Math.max(0,i-win),hi=Math.min(e.length-1,i+win);
+    for(let j=lo;j<=hi;j++){ s+=e[j]; n++; }
+    return s/n;
+  });
+  let gain=0, ref=sm[0];
+  for(let i=1;i<sm.length;i++){
+    if(sm[i]-ref>=threshold){ gain+=sm[i]-ref; ref=sm[i]; }
+    else if(sm[i]<ref){ ref=sm[i]; }
   }
   return Math.round(gain);
 }
