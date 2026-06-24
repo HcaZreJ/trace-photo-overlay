@@ -7,7 +7,45 @@ import { join } from 'node:path';
 import {
   mercatorX, mercatorY, smoothTrack, projectTrack,
   extractGeoJSONCoords, extractTextCoords, crc32, buildStoreZip, trackDistanceKm,
+  trackDurationSec, avgSpeedKmh, paceSecPerKm, elevationGainM, formatDuration, formatPace,
 } from './core.mjs';
+
+// ==================== 运动指标 ====================
+test('trackDurationSec: 首尾时间差(秒)', () => {
+  const t0 = 1_700_000_000_000;
+  assert.equal(trackDurationSec([{ time: t0 }, { time: t0 + 50_000 }, { time: t0 + 8520_000 }]), 8520);
+});
+test('trackDurationSec: 无时间戳返回 null', () => {
+  assert.equal(trackDurationSec([{ lng: 0, lat: 0 }, { lng: 1, lat: 1 }]), null);
+});
+test('formatDuration: 时分格式', () => {
+  assert.equal(formatDuration(8520), '2小时22分');
+  assert.equal(formatDuration(2880), '48分');
+  assert.equal(formatDuration(3900), '1小时05分');
+  assert.equal(formatDuration(null), null);
+});
+test('avgSpeedKmh: 距离÷时长', () => {
+  const pts = [{ lng: 0, lat: 0, time: 0 }, { lng: 1, lat: 0, time: 3600_000 }]; // 111.19km / 1h
+  assert.ok(Math.abs(avgSpeedKmh(pts) - 111.19) < 0.5, `实际 ${avgSpeedKmh(pts)}`);
+});
+test('avgSpeedKmh: 无时间返回 null', () => {
+  assert.equal(avgSpeedKmh([{ lng: 0, lat: 0 }, { lng: 1, lat: 0 }]), null);
+});
+test('paceSecPerKm: 10km/50min ≈ 300 s/km', () => {
+  const pts = [{ lng: 0, lat: 0, time: 0 }, { lng: 0, lat: 0.0899322, time: 3000_000 }];
+  assert.ok(Math.abs(paceSecPerKm(pts) - 300) < 5, `实际 ${paceSecPerKm(pts)}`);
+});
+test('formatPace: 配速格式', () => {
+  assert.equal(formatPace(330), `5'30"`);
+  assert.equal(formatPace(300), `5'00"`);
+  assert.equal(formatPace(null), null);
+});
+test('elevationGainM: 累加正海拔增量', () => {
+  assert.equal(elevationGainM([{ ele: 100 }, { ele: 110 }, { ele: 105 }, { ele: 120 }, { ele: 118 }]), 25);
+});
+test('elevationGainM: 无海拔返回 null', () => {
+  assert.equal(elevationGainM([{ lng: 0, lat: 0 }, { lng: 1, lat: 1 }]), null);
+});
 
 // ==================== trackDistanceKm ====================
 test('trackDistanceKm: 空/单点为 0', () => {

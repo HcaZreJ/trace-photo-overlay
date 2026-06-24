@@ -22,6 +22,41 @@ export function trackDistanceKm(points) {
   return m / 1000;
 }
 
+// ==================== 运动指标（时长/均速/配速/爬升） ====================
+// 轨迹点可带 time(毫秒 epoch) 与 ele(米)。能算出则返回数值，缺数据返回 null。
+export function trackDurationSec(points){
+  const ts=(points||[]).map(p=>p.time).filter(t=>typeof t==='number');
+  if(ts.length<2) return null;
+  return (ts[ts.length-1]-ts[0])/1000;
+}
+export function avgSpeedKmh(points){
+  const sec=trackDurationSec(points); if(!sec||sec<=0) return null;
+  return trackDistanceKm(points)/(sec/3600);
+}
+export function paceSecPerKm(points){
+  const sec=trackDurationSec(points), km=trackDistanceKm(points);
+  if(!sec||!km||km<=0) return null;
+  return sec/km;
+}
+export function elevationGainM(points){
+  const eles=(points||[]).map(p=>p.ele).filter(e=>typeof e==='number');
+  if(eles.length<2) return null;
+  let gain=0;
+  for(let i=1;i<eles.length;i++){ const d=eles[i]-eles[i-1]; if(d>0) gain+=d; }
+  return Math.round(gain);
+}
+export function formatDuration(sec){
+  if(sec==null) return null;
+  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60);
+  return h>0 ? `${h}小时${String(m).padStart(2,'0')}分` : `${m}分`;
+}
+export function formatPace(secPerKm){
+  if(secPerKm==null) return null;
+  let m=Math.floor(secPerKm/60), s=Math.round(secPerKm%60);
+  if(s===60){ m+=1; s=0; }
+  return `${m}'${String(s).padStart(2,'0')}"`;
+}
+
 // ==================== Catmull-Rom 平滑插值 ====================
 // 在稀疏点之间补点，消除折线尖角。点数已足够则原样返回。
 export function smoothTrack(points, targetCount) {
