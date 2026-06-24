@@ -465,9 +465,19 @@ function trackDistanceKm(points){
   return m/1000;
 }
 function trackDurationSec(points){
-  const ts=(points||[]).map(p=>p.time).filter(t=>typeof t==='number');
-  if(ts.length<2) return null;
-  return (ts[ts.length-1]-ts[0])/1000;
+  if(!points||points.length<2) return null;
+  const R=6371000,toR=Math.PI/180,MIN_SPEED=0.5; // 低于 0.5m/s 视为停顿，不计入运动时长
+  let moving=0,any=false;
+  for(let i=1;i<points.length;i++){
+    const a=points[i-1],b=points[i];
+    if(typeof a.time!=='number'||typeof b.time!=='number') continue;
+    const dt=(b.time-a.time)/1000; if(dt<=0) continue;
+    any=true;
+    const dLat=(b.lat-a.lat)*toR,dLng=(b.lng-a.lng)*toR;
+    const h=Math.sin(dLat/2)**2+Math.cos(a.lat*toR)*Math.cos(b.lat*toR)*Math.sin(dLng/2)**2;
+    if(2*R*Math.asin(Math.sqrt(h))/dt>=MIN_SPEED) moving+=dt;
+  }
+  return any?moving:null;
 }
 function avgSpeedKmh(points){
   const sec=trackDurationSec(points); if(!sec||sec<=0) return null;
@@ -478,11 +488,12 @@ function paceSecPerKm(points){
   if(!sec||!km||km<=0) return null;
   return sec/km;
 }
-function elevationGainM(points){
+function elevationGainM(points,threshold=5){
   const eles=(points||[]).map(p=>p.ele).filter(e=>typeof e==='number');
   if(eles.length<2) return null;
-  let gain=0;
-  for(let i=1;i<eles.length;i++){ const d=eles[i]-eles[i-1]; if(d>0) gain+=d; }
+  let gain=0,ref=eles[0];
+  for(let i=1;i<eles.length;i++){ const e=eles[i];
+    if(e-ref>=threshold){ gain+=e-ref; ref=e; } else if(e<ref){ ref=e; } }
   return Math.round(gain);
 }
 function formatDuration(sec){
@@ -627,19 +638,10 @@ function drawTextCard(ctx){
     ctx.fillText(ln.t,pad,y);
     y+=ln.s+ln.g;
   }
-  if(trackPoints){
-    const ts=L*0.2, tx=w-pad-ts, ty=h-pad-ts;
-    const proj=projectTrack(trackPoints,ts);
-    ctx.shadowBlur=L*0.012;
-    ctx.strokeStyle=$('trackColor').value; ctx.lineWidth=Math.max(1.5,L*0.006);
-    ctx.lineCap='round'; ctx.lineJoin='round';
-    ctx.beginPath(); ctx.moveTo(tx+proj.points[0].x,ty+proj.points[0].y);
-    for(let i=1;i<proj.points.length;i++) ctx.lineTo(tx+proj.points[i].x,ty+proj.points[i].y);
-    ctx.stroke();
-  }
   ctx.restore();
 }
 function drawCell(ctx,userImg,overlay,idx){
+  if(textOverlay.enabled&&idx===textOverlay.cell) overlay=null; // 数据卡那格不叠轨迹切片，保持文字清爽
   const cw=ctx.canvas.width,ch=ctx.canvas.height;
   const iw=userImg.naturalWidth||userImg.width, ih=userImg.naturalHeight||userImg.height;
   ctx.clearRect(0,0,cw,ch);
@@ -675,7 +677,7 @@ async function compositeHighRes(idx){
   const img=await loadImage(images[idx]);
   const iw=img.naturalWidth,ih=img.naturalHeight;
   const c=document.createElement('canvas'); const ctx=c.getContext('2d');
-  const overlay=overlayCells[idx];
+  const overlay=(textOverlay.enabled&&idx===textOverlay.cell)?null:overlayCells[idx];
   if(cropMode==='keep'){
     c.width=iw;c.height=ih; ctx.drawImage(img,0,0,iw,ih);
     if(overlay){ const side=Math.min(iw,ih); ctx.drawImage(overlay,(iw-side)/2,(ih-side)/2,side,side); }
@@ -746,7 +748,7 @@ function fillMetricsFromTrack(pts){
   set('duration', formatDuration(trackDurationSec(pts))||'');
   const v=avgSpeedKmh(pts); set('speed', v?v.toFixed(1)+' km/h':'');
   const p=paceSecPerKm(pts); set('pace', p?formatPace(p)+' /km':'');
-  const e=elevationGainM(pts); set('elevation', e!=null?e+' 公尺':'');
+  const e=elevationGainM(pts); set('elevation', e!=null?e+' 米':'');
 }
 async function loadTrack(file){
   showBusy('解析轨迹中…');

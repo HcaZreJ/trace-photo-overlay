@@ -11,9 +11,14 @@ import {
 } from './core.mjs';
 
 // ==================== 运动指标 ====================
-test('trackDurationSec: 首尾时间差(秒)', () => {
-  const t0 = 1_700_000_000_000;
-  assert.equal(trackDurationSec([{ time: t0 }, { time: t0 + 50_000 }, { time: t0 + 8520_000 }]), 8520);
+test('trackDurationSec(运动时长): 扣除停顿段', () => {
+  const pts = [
+    { lng: 0, lat: 0, time: 0 },
+    { lng: 0, lat: 0.001, time: 60_000 },    // 移动 ~111m/60s → 计入 60s
+    { lng: 0, lat: 0.001, time: 660_000 },   // 原地停 600s → 不计
+    { lng: 0, lat: 0.002, time: 720_000 },   // 移动 ~111m/60s → 计入 60s
+  ];
+  assert.equal(trackDurationSec(pts), 120);
 });
 test('trackDurationSec: 无时间戳返回 null', () => {
   assert.equal(trackDurationSec([{ lng: 0, lat: 0 }, { lng: 1, lat: 1 }]), null);
@@ -40,8 +45,12 @@ test('formatPace: 配速格式', () => {
   assert.equal(formatPace(300), `5'00"`);
   assert.equal(formatPace(null), null);
 });
-test('elevationGainM: 累加正海拔增量', () => {
+test('elevationGainM: 真实爬升累加(超阈值)', () => {
   assert.equal(elevationGainM([{ ele: 100 }, { ele: 110 }, { ele: 105 }, { ele: 120 }, { ele: 118 }]), 25);
+});
+test('elevationGainM: 过滤 GPS 噪声(小幅震荡不计)', () => {
+  assert.equal(elevationGainM([{ ele: 100 }, { ele: 102 }, { ele: 100 }, { ele: 101 }, { ele: 99 }, { ele: 100 }]), 0);
+  assert.ok(Math.abs(elevationGainM([{ ele: 100 }, { ele: 103 }, { ele: 150 }, { ele: 148 }, { ele: 200 }]) - 100) < 10);
 });
 test('elevationGainM: 无海拔返回 null', () => {
   assert.equal(elevationGainM([{ lng: 0, lat: 0 }, { lng: 1, lat: 1 }]), null);
