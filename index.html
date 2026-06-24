@@ -700,32 +700,34 @@ function drawTextCard(ctx){
   const items=METRICS.filter(m=>t.metrics[m.key].show && t.metrics[m.key].value.trim())
                      .map(m=>({label:m.label,value:t.metrics[m.key].value.trim()}));
   if(!t.title && !t.date && !items.length) return;
-  ctx.save();
-  const grad=ctx.createLinearGradient(0,0,0,h);
-  grad.addColorStop(0,'rgba(0,0,0,0)'); grad.addColorStop(0.5,'rgba(0,0,0,0.12)'); grad.addColorStop(1,'rgba(0,0,0,0.82)');
-  ctx.fillStyle=grad; ctx.fillRect(0,0,w,h);
-  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
-  ctx.shadowColor='rgba(0,0,0,0.55)'; ctx.shadowBlur=L*0.015;
-  const pad=L*0.07;
+  // 逐行布局（顶对齐）：标签小字 + 数值大字，组间留间距，标签紧贴其数值
   const lines=[];
-  if(t.title) lines.push({t:t.title,s:L*0.082,wt:800,g:L*0.028});
-  if(t.date)  lines.push({t:t.date,s:L*0.044,wt:600,g:L*0.045,dim:1});
+  if(t.title) lines.push({text:t.title,size:L*0.088,bold:1,gap:0});
+  if(t.date)  lines.push({text:t.date,size:L*0.046,dim:1,gap:L*0.012});
   for(const it of items){
-    lines.push({t:it.label,s:L*0.038,wt:600,g:L*0.004,dim:1});
-    lines.push({t:it.value,s:L*0.072,wt:800,g:L*0.022});
+    lines.push({text:it.label,size:L*0.043,dim:1,gap:L*0.034});
+    lines.push({text:it.value,size:L*0.078,bold:1,gap:L*0.007});
   }
-  let totalH=0; for(const ln of lines) totalH+=ln.s+ln.g;
-  let y=h-pad-totalH+lines[0].s;
+  let totalH=0; for(const ln of lines) totalH+=ln.gap+ln.size;
+  const pad=L*0.06;
+  let y=h-pad-totalH;
+  ctx.save();
+  ctx.textAlign='left'; ctx.textBaseline='top'; ctx.lineJoin='round'; ctx.miterLimit=2;
   for(const ln of lines){
-    ctx.font=`${ln.wt} ${Math.round(ln.s)}px "PingFang SC","Microsoft YaHei",sans-serif`;
-    ctx.fillStyle=ln.dim?'rgba(255,255,255,0.82)':'#fff';
-    ctx.fillText(ln.t,pad,y);
-    y+=ln.s+ln.g;
+    y+=ln.gap;
+    ctx.font=`${ln.bold?800:600} ${Math.round(ln.size)}px "PingFang SC","Microsoft YaHei",sans-serif`;
+    // 描边+阴影保证任意背景可读，不再压暗整张图
+    ctx.lineWidth=Math.max(2,ln.size*0.1); ctx.strokeStyle='rgba(0,0,0,0.5)';
+    ctx.shadowColor='rgba(0,0,0,0.55)'; ctx.shadowBlur=L*0.02; ctx.shadowOffsetY=L*0.0025;
+    ctx.strokeText(ln.text,pad,y);
+    ctx.shadowColor='transparent';
+    ctx.fillStyle=ln.dim?'rgba(255,255,255,0.95)':'#fff';
+    ctx.fillText(ln.text,pad,y);
+    y+=ln.size;
   }
   ctx.restore();
 }
 function drawCell(ctx,userImg,overlay,idx){
-  if(textOverlay.enabled&&idx===textOverlay.cell) overlay=null; // 数据卡那格不叠轨迹切片，保持文字清爽
   const cw=ctx.canvas.width,ch=ctx.canvas.height;
   const iw=userImg.naturalWidth||userImg.width, ih=userImg.naturalHeight||userImg.height;
   ctx.clearRect(0,0,cw,ch);
@@ -761,7 +763,7 @@ async function compositeHighRes(idx){
   const img=await loadImage(images[idx]);
   const iw=img.naturalWidth,ih=img.naturalHeight;
   const c=document.createElement('canvas'); const ctx=c.getContext('2d');
-  const overlay=(textOverlay.enabled&&idx===textOverlay.cell)?null:overlayCells[idx];
+  const overlay=overlayCells[idx];
   if(cropMode==='keep'){
     c.width=iw;c.height=ih; ctx.drawImage(img,0,0,iw,ih);
     if(overlay){ const side=Math.min(iw,ih); ctx.drawImage(overlay,(iw-side)/2,(ih-side)/2,side,side); }
