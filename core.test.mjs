@@ -23,10 +23,10 @@ test('trackDurationSec(运动时长): 扣除停顿段', () => {
 test('trackDurationSec: 无时间戳返回 null', () => {
   assert.equal(trackDurationSec([{ lng: 0, lat: 0 }, { lng: 1, lat: 1 }]), null);
 });
-test('formatDuration: 时分格式', () => {
-  assert.equal(formatDuration(8520), '2小时22分');
-  assert.equal(formatDuration(2880), '48分');
-  assert.equal(formatDuration(3900), '1小时05分');
+test('formatDuration: hh:mm:ss 格式', () => {
+  assert.equal(formatDuration(8520), '2:22:00');
+  assert.equal(formatDuration(2880), '0:48:00');
+  assert.equal(formatDuration(3661), '1:01:01');
   assert.equal(formatDuration(null), null);
 });
 test('avgSpeedKmh: 距离÷时长', () => {

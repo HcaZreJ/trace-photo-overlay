@@ -98,12 +98,13 @@ input[type=color]{width:38px;height:30px;border:1px solid var(--border);border-r
 .switch-row input{width:18px;height:18px;accent-color:var(--accent)}
 .text-fields{margin-top:14px;display:none;flex-direction:column;gap:10px}
 .text-fields.show{display:flex}
-.text-fields input[type=text],.text-fields select{width:100%;background:rgba(255,255,255,.05);
+.text-fields > input[type=text]{width:100%;background:rgba(255,255,255,.05);
   border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:10px;font-size:14px;font-family:inherit}
 .text-fields input::placeholder{color:var(--muted)}
-.text-fields .row2{display:flex;gap:10px}
-.text-fields .row2 input{flex:1;min-width:0}
-.text-fields select{cursor:pointer}
+.text-fields .ctrl-row select{flex:1;background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:10px;font-size:14px;font-family:inherit;cursor:pointer}
+.style-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.style-row .sl{color:var(--sub);font-size:13px;flex:none}
+.style-row select{background:rgba(255,255,255,.05);border:1px solid var(--border);color:var(--text);padding:7px 9px;border-radius:8px;font-size:13px;font-family:inherit;cursor:pointer}
 .metrics-hint{font-size:12px;color:var(--muted)}
 .metrics-grid{display:flex;flex-direction:column;gap:8px}
 .metric-row{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer}
@@ -219,15 +220,28 @@ input[type=color]{width:38px;height:30px;border:1px solid var(--border);border-r
       <input type="text" id="textDate" placeholder="日期，如 2026.06.24（可留空）">
       <div class="metrics-hint">勾选要显示的数据 · 导入轨迹自动算填。距离最准；时长 / 均速对多日轨迹是估算，建议手改为 App 里的官方值。</div>
       <div class="metrics-grid" id="metricsGrid"></div>
-      <div class="ctrl-row">
-        <label>文字</label>
+      <div class="style-row">
+        <span class="sl">字体</span>
+        <select id="textFont">
+          <option value='-apple-system,"PingFang SC","Microsoft YaHei",sans-serif'>无衬线（默认）</option>
+          <option value='"Yuanti SC","YouYuan","PingFang SC",sans-serif'>圆体</option>
+          <option value='"Songti SC","SimSun",serif'>宋体（衬线）</option>
+          <option value='Georgia,"Baskerville","Songti SC",serif'>优雅衬线</option>
+        </select>
+        <span class="sl">位置</span>
+        <select id="textHpos"><option value="left">靠左</option><option value="center">居中</option><option value="right">靠右</option></select>
+        <span class="sl">对齐</span>
+        <select id="textAlign"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select>
+      </div>
+      <div class="style-row">
+        <span class="sl">文字</span>
         <input type="color" id="textColorPick" value="#ffffff">
         <input type="text" id="textColorHex" class="hex" value="#ffffff">
-        <label style="margin-left:14px">描边</label>
+        <span class="sl">描边</span>
         <input type="color" id="strokeColorPick" value="#000000">
         <input type="text" id="strokeColorHex" class="hex" value="#000000">
       </div>
-      <div class="ctrl-row"><label>位置</label><select id="textCell"></select></div>
+      <div class="ctrl-row"><label>叠加到</label><select id="textCell"></select></div>
     </div>
   </section>
 
@@ -305,6 +319,7 @@ const METRICS=[
   {key:'speed',label:'均速'},{key:'pace',label:'配速'},{key:'elevation',label:'爬升'},
 ];
 let textOverlay={ enabled:false, cell:0, title:'', date:'', textColor:'#ffffff', strokeColor:'#000000',
+  font:'-apple-system,"PingFang SC","Microsoft YaHei",sans-serif', align:'left', hpos:'left',
   metrics:{ distance:{show:true,value:''}, duration:{show:true,value:''},
             speed:{show:false,value:''}, pace:{show:false,value:''}, elevation:{show:true,value:''} } };
 const imageCache = new Map();
@@ -592,8 +607,9 @@ function elevationGainM(points,win=5,threshold=5){
 }
 function formatDuration(sec){
   if(sec==null) return null;
-  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60);
-  return h>0 ? `${h}小时${String(m).padStart(2,'0')}分` : `${m}分`;
+  sec=Math.round(sec);
+  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
+  return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 function formatPace(secPerKm){
   if(secPerKm==null) return null;
@@ -724,18 +740,19 @@ function drawTextCard(ctx){
   const maxH=h-pad*2;
   if(totalH>maxH){ const s=maxH/totalH; for(const ln of lines){ ln.size*=s; ln.gap*=s; } totalH=maxH; }
   let y=h-pad-totalH;
+  const ax = t.hpos==='center'?w/2 : t.hpos==='right'?w-pad : pad;
   ctx.save();
-  ctx.textAlign='left'; ctx.textBaseline='top'; ctx.lineJoin='round'; ctx.miterLimit=2;
+  ctx.textAlign=t.align||'left'; ctx.textBaseline='top'; ctx.lineJoin='round'; ctx.miterLimit=2;
   for(const ln of lines){
     y+=ln.gap;
-    ctx.font=`${ln.bold?800:600} ${Math.round(ln.size)}px "PingFang SC","Microsoft YaHei",sans-serif`;
-    // 描边+阴影保证任意背景可读，不压暗整张图；颜色由用户选取
+    ctx.font=`${ln.bold?800:600} ${Math.round(ln.size)}px ${t.font}`;
+    // 描边+阴影保证任意背景可读，不压暗整张图；颜色/字体/对齐由用户选取
     ctx.lineWidth=Math.max(2,ln.size*0.1); ctx.strokeStyle=t.strokeColor;
     ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=L*0.02; ctx.shadowOffsetY=L*0.0025;
-    ctx.globalAlpha=1; ctx.strokeText(ln.text,pad,y);
+    ctx.globalAlpha=1; ctx.strokeText(ln.text,ax,y);
     ctx.shadowColor='transparent';
     ctx.fillStyle=t.textColor; ctx.globalAlpha=ln.dim?0.92:1;
-    ctx.fillText(ln.text,pad,y);
+    ctx.fillText(ln.text,ax,y);
     y+=ln.size;
   }
   ctx.restore();
@@ -953,12 +970,13 @@ function init(){
     textOverlay.title=$('textTitle').value;
     textOverlay.date=$('textDate').value;
     textOverlay.cell=+$('textCell').value;
+    textOverlay.font=$('textFont').value; textOverlay.align=$('textAlign').value; textOverlay.hpos=$('textHpos').value;
     mg.querySelectorAll('input[type=checkbox]').forEach(cb=>{ textOverlay.metrics[cb.dataset.k].show=cb.checked; });
     mg.querySelectorAll('.mv').forEach(inp=>{ textOverlay.metrics[inp.dataset.k].value=inp.value; });
     $('textFields').classList.toggle('show',textOverlay.enabled);
     updatePreview();
   };
-  ['textEnable','textTitle','textDate','textCell'].forEach(id=>{ $(id).addEventListener('input',syncText); $(id).addEventListener('change',syncText); });
+  ['textEnable','textTitle','textDate','textCell','textFont','textHpos','textAlign'].forEach(id=>{ $(id).addEventListener('input',syncText); $(id).addEventListener('change',syncText); });
   mg.addEventListener('input',syncText); mg.addEventListener('change',syncText);
 
   renderGrid(); updatePreview();

@@ -70,8 +70,9 @@ export function elevationGainM(points, win=5, threshold=5){
 }
 export function formatDuration(sec){
   if(sec==null) return null;
-  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60);
-  return h>0 ? `${h}小时${String(m).padStart(2,'0')}分` : `${m}分`;
+  sec=Math.round(sec);
+  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
+  return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 export function formatPace(secPerKm){
   if(secPerKm==null) return null;
