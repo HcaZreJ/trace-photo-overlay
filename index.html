@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轨迹照片九宫格 · 本地生成器</title>
+<style>
+:root{
+  --bg:#0e1512; --card:rgba(255,255,255,.06); --border:rgba(255,255,255,.12);
+  --text:#eef3f0; --sub:rgba(238,243,240,.62); --muted:rgba(238,243,240,.38);
+  --accent:#4ade80; --accent2:#fb923c; --danger:#f87171; --radius:18px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;
+  background:radial-gradient(1200px 800px at 20% -10%,#13261d 0%,var(--bg) 55%) fixed;
+  color:var(--text);min-height:100vh;line-height:1.5;-webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:980px;margin:0 auto;padding:28px 18px 80px}
+header{text-align:center;margin-bottom:8px}
+h1{font-size:26px;font-weight:800;letter-spacing:.5px}
+h1 .em{color:var(--accent)}
+.tagline{color:var(--sub);font-size:14px;margin-top:6px}
+.privacy{display:inline-flex;align-items:center;gap:6px;margin-top:14px;padding:6px 14px;
+  background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.3);border-radius:999px;
+  font-size:12.5px;color:#bff0d0}
+.privacy svg{width:14px;height:14px;flex:none}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:20px;margin-top:20px;backdrop-filter:blur(12px)}
+.step-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.step-no{width:26px;height:26px;border-radius:50%;background:var(--accent);color:#06210f;
+  font-weight:800;font-size:14px;display:grid;place-items:center;flex:none}
+.step-title{font-size:16px;font-weight:700}
+.step-sub{color:var(--muted);font-size:12.5px;margin-left:auto}
+
+/* 拖拽/上传区 */
+.dropzone{border:1.5px dashed var(--border);border-radius:14px;padding:26px 18px;text-align:center;
+  cursor:pointer;transition:.18s;color:var(--sub)}
+.dropzone:hover,.dropzone.over{border-color:var(--accent);background:rgba(74,222,128,.06);color:var(--text)}
+.dropzone .big{font-size:15px;font-weight:600;color:var(--text)}
+.dropzone .small{font-size:12px;color:var(--muted);margin-top:5px}
+
+/* 轨迹区 */
+.track-body{display:none;gap:18px;align-items:center;flex-wrap:wrap}
+.track-body.show{display:flex}
+#trackThumb{width:160px;height:160px;border-radius:12px;background:rgba(0,0,0,.35);border:1px solid var(--border);flex:none}
+.track-meta{flex:1;min-width:200px}
+.track-meta .fmt{font-size:13px;color:var(--sub)}
+.track-meta .fmt b{color:var(--accent)}
+.ctrl-row{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:13px;color:var(--sub)}
+.ctrl-row label{min-width:42px}
+input[type=range]{flex:1;accent-color:var(--accent)}
+input[type=color]{width:38px;height:30px;border:1px solid var(--border);border-radius:8px;background:none;cursor:pointer;padding:2px}
+.swatches{display:flex;gap:6px}
+.swatch{width:22px;height:22px;border-radius:6px;cursor:pointer;border:2px solid transparent}
+.swatch.on{border-color:#fff}
+
+/* 九宫格 */
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.btn{border:1px solid var(--border);background:rgba(255,255,255,.05);color:var(--text);
+  padding:9px 16px;border-radius:10px;font-size:13.5px;font-weight:600;cursor:pointer;transition:.15s}
+.btn:hover{background:rgba(255,255,255,.1)}
+.btn.primary{background:var(--accent);color:#06210f;border-color:transparent}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.primary:disabled{opacity:.4;cursor:not-allowed;filter:none}
+.btn.ghost{background:none}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.seg button{background:none;border:none;color:var(--sub);padding:8px 14px;font-size:13px;cursor:pointer}
+.seg button.on{background:var(--accent);color:#06210f;font-weight:700}
+.spacer{flex:1}
+
+.grid9{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;border-radius:12px}
+.grid9.over{outline:2px dashed var(--accent);outline-offset:4px}
+.cell{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;cursor:pointer;
+  background:rgba(255,255,255,.04);border:1px solid var(--border);display:grid;place-items:center;transition:.15s}
+.cell:hover{border-color:var(--accent)}
+.cell.filled{border-style:solid}
+.cell.dragging{opacity:.35}
+.cell.drop-target{outline:2px solid var(--accent);outline-offset:-2px}
+.cell img{width:100%;height:100%;object-fit:cover;display:block}
+.cell .plus{font-size:30px;color:var(--muted);font-weight:300}
+.cell .badge{position:absolute;top:6px;left:6px;width:20px;height:20px;border-radius:50%;
+  background:rgba(0,0,0,.6);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center;z-index:2}
+.cell .rm{position:absolute;top:5px;right:5px;width:20px;height:20px;border-radius:50%;
+  background:rgba(0,0,0,.6);color:#fff;border:none;cursor:pointer;font-size:13px;line-height:1;display:none;z-index:2}
+.cell.filled:hover .rm{display:block}
+
+/* 预览 */
+.switch-row{display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer;user-select:none;color:var(--text)}
+.switch-row input{width:18px;height:18px;accent-color:var(--accent)}
+.text-fields{margin-top:14px;display:none;flex-direction:column;gap:10px}
+.text-fields.show{display:flex}
+.text-fields input[type=text],.text-fields select{width:100%;background:rgba(255,255,255,.05);
+  border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:10px;font-size:14px;font-family:inherit}
+.text-fields input::placeholder{color:var(--muted)}
+.text-fields .row2{display:flex;gap:10px}
+.text-fields .row2 input{flex:1;min-width:0}
+.text-fields select{cursor:pointer}
+.preview-wrap{display:none}
+.preview-wrap.show{display:block}
+.preview-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-width:420px;margin:0 auto;background:#000;padding:4px;border-radius:10px}
+.preview-grid canvas,.preview-grid .ph{width:100%;aspect-ratio:1;display:block;border-radius:3px}
+.preview-grid .ph{background:rgba(255,255,255,.05);display:grid;place-items:center;color:var(--muted)}
+.hint{font-size:12.5px;color:var(--muted);text-align:center;margin-top:12px}
+.foot{text-align:center;color:var(--muted);font-size:12px;margin-top:36px;line-height:1.8}
+.foot a{color:var(--sub)}
+.busy{display:none;align-items:center;gap:8px;color:var(--accent);font-size:13px;margin-top:10px}
+.busy.show{display:flex}
+.spin{width:14px;height:14px;border:2px solid rgba(74,222,128,.3);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media(max-width:560px){.wrap{padding:18px 12px 60px}h1{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>轨迹照片<span class="em">九宫格</span></h1>
+    <p class="tagline">把骑行 / 徒步 / 越野跑 / 跑步等运动轨迹叠到九宫格照片上 · 一键导出朋友圈九图</p>
+    <div class="privacy">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6l-8-4z"/></svg>
+      照片与轨迹全部在你浏览器本地处理，不上传任何服务器
+    </div>
+  </header>
+
+  <!-- 步骤 1：轨迹 -->
+  <section class="card">
+    <div class="step-head">
+      <div class="step-no">1</div>
+      <div class="step-title">导入运动轨迹</div>
+      <div class="step-sub">可选 · GPX / KML / GeoJSON / TCX / CSV</div>
+    </div>
+    <div id="trackDrop" class="dropzone">
+      <div class="big">点击或拖入轨迹文件</div>
+      <div class="small">支持 Strava / Garmin / 行者 / 黑鸟单车 / 两步路 等导出的 .gpx .kml .geojson .tcx</div>
+    </div>
+    <input type="file" id="trackInput" accept=".gpx,.kml,.geojson,.json,.tcx,.xml,.csv,.txt" hidden>
+
+    <div id="trackBody" class="track-body">
+      <canvas id="trackThumb"></canvas>
+      <div class="track-meta">
+        <div class="fmt">格式 <b id="trackFmt">—</b> · 共 <b id="trackPts">0</b> 个轨迹点</div>
+        <div class="ctrl-row">
+          <label>颜色</label>
+          <div class="swatches" id="swatches"></div>
+          <input type="color" id="trackColor" value="#fb923c">
+        </div>
+        <div class="ctrl-row">
+          <label>线宽</label>
+          <input type="range" id="trackWidth" min="4" max="40" value="14">
+        </div>
+        <div class="ctrl-row">
+          <button class="btn ghost" id="trackClear">清除轨迹</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 步骤 2：九宫格照片 -->
+  <section class="card">
+    <div class="step-head">
+      <div class="step-no">2</div>
+      <div class="step-title">上传 9 张照片</div>
+      <div class="step-sub">点击格子单张上传 · 可拖动交换位置</div>
+    </div>
+    <div class="toolbar">
+      <button class="btn" id="batchBtn">批量上传</button>
+      <input type="file" id="batchInput" accept="image/*,.heic,.heif" multiple hidden>
+      <div class="seg" title="照片裁切方式">
+        <button id="modeCrop" class="on">裁切 1:1</button>
+        <button id="modeKeep">保持原比例</button>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn ghost" id="clearBtn">清空</button>
+    </div>
+    <div class="grid9" id="grid9"></div>
+    <div class="busy" id="busy"><span class="spin"></span><span id="busyText">处理中…</span></div>
+  </section>
+
+  <!-- 文字标注（可选） -->
+  <section class="card">
+    <div class="step-head">
+      <div class="step-no" style="background:var(--accent2);color:#3a1c05">✍</div>
+      <div class="step-title">文字标注</div>
+      <div class="step-sub">可选 · 标题 / 日期 / 里程</div>
+    </div>
+    <label class="switch-row"><input type="checkbox" id="textEnable">在某一格照片上叠加文字</label>
+    <div class="text-fields" id="textFields">
+      <input type="text" id="textTitle" placeholder="标题，如：环青海湖 360km">
+      <div class="row2">
+        <input type="text" id="textDate" placeholder="日期，如 2026.06.24">
+        <input type="text" id="textDist" placeholder="里程（导入轨迹后自动填）">
+      </div>
+      <div class="ctrl-row"><label>位置</label><select id="textCell"></select></div>
+    </div>
+  </section>
+
+  <!-- 步骤 3：预览 + 导出 -->
+  <section class="card preview-wrap" id="previewWrap">
+    <div class="step-head">
+      <div class="step-no">3</div>
+      <div class="step-title">预览 & 导出</div>
+      <div class="step-sub">导出为 ZIP，含 1-9 张高清图</div>
+    </div>
+    <div class="preview-grid" id="previewGrid"></div>
+    <div style="text-align:center;margin-top:18px">
+      <button class="btn primary" id="downloadBtn" disabled>下载九宫格 ZIP</button>
+    </div>
+    <div class="hint">微信朋友圈按 1→9 顺序选图，即可拼成完整九宫格。</div>
+  </section>
+
+  <div class="foot">
+    纯前端 · 零后端 · 完全离线 · 开源自部署 · 照片与轨迹不出本机<br>
+    轨迹解析 · Catmull-Rom 平滑 · Web Mercator 投影 · Canvas 合成 · 零依赖 ZIP 打包
+  </div>
+</div>
+
+<script>
+/* ============================================================
+ * 轨迹照片九宫格 — 全部逻辑（纯前端，无后端，无埋点，无水印）
+ * 核心几何/解析/打包函数已在 Node 下单测验证。
+ * ============================================================ */
+
+// ==================== 常量与状态 ====================
+const CELL_MAX = 1600;            // 单张照片缩放后最大边
+const CUSTOM_CELL_SIZE = 800;     // 轨迹叠层单格尺寸
+const CUSTOM_FULL_SIZE = CUSTOM_CELL_SIZE * 3;
+const PREVIEW_SIZE = 300;
+const SWATCH_COLORS = ['#fb923c','#f87171','#4ade80','#38bdf8','#a78bfa','#fde047','#ffffff'];
+
+const images = new Array(9).fill(null);   // 每格的 dataURL（已缩放）
+let trackPoints = null;                   // [{lng,lat}]
+let overlayCells = new Array(9).fill(null); // 9 个轨迹叠层 canvas
+let cropMode = 'crop';                    // 'crop' | 'keep'
+let textOverlay = { enabled:false, cell:0, title:'', date:'', distance:'' };
+const imageCache = new Map();
+
+const $ = id => document.getElementById(id);
+
+// ==================== HEIC / 实况照片 转换 ====================
+// 实况/动态照片：安卓单文件 JPG 末尾内嵌 MP4，按 XMP 元数据切出静态帧。纯前端无依赖。
+function indexOfBytes(hay, needle){
+  for(let i=0;i<=hay.length-needle.length;i++){
+    let ok=true; for(let j=0;j<needle.length;j++){ if(hay[i+j]!==needle[j]){ok=false;break;} }
+    if(ok) return i;
+  }
+  return -1;
+}
+async function extractMotionPhoto(file){
+  if(!file.type.startsWith('image/')) return null;
+  try{
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const head = bytes.slice(0, Math.min(131072, bytes.byteLength));
+    const text = new TextDecoder().decode(head);
+    const s = text.indexOf('<x:xmpmeta'); if(s===-1) return null;
+    const e = text.indexOf('</x:xmpmeta>')+12; if(e<12) return null;
+    const xmp = text.slice(s,e);
+    let vlen=0,m;
+    if((m=xmp.match(/Item:Length="(\d+)"/))) vlen=parseInt(m[1]);
+    if(!vlen && (m=xmp.match(/GCamera:MicroVideoOffset="(\d+)"/))) vlen=parseInt(m[1]);
+    if(!vlen && (m=xmp.match(/OpCamera:VideoLength="(\d+)"/))) vlen=parseInt(m[1]);
+    if(!vlen){
+      const search=bytes.slice(0,Math.min(262144,bytes.byteLength));
+      const idx=indexOfBytes(search,[0x66,0x74,0x79,0x70]); // "ftyp"
+      if(idx>0) vlen=bytes.byteLength-(idx-4);
+    }
+    if(isNaN(vlen)||vlen<=0||vlen>=bytes.byteLength) return null;
+    const imgSize=bytes.byteLength-vlen; if(imgSize<=0) return null;
+    return new Blob([bytes.slice(0,imgSize)],{type:'image/jpeg'});
+  }catch(_){ return null; }
+}
+let heicReady=false, heicLoading=null;
+function ensureHeic(){
+  if(heicReady) return Promise.resolve(true);
+  if(heicLoading) return heicLoading;
+  heicLoading = new Promise(res=>{
+    const s=document.createElement('script');
+    s.src='./heic2any.min.js';  // 本地托管，彻底离线
+    s.onload=()=>{ heicReady=true; res(true); };
+    s.onerror=()=>res(false);
+    document.head.appendChild(s);
+  });
+  return heicLoading;
+}
+async function autoConvertPhoto(file){
+  const name=(file.name||'').toLowerCase();
+  if(name.endsWith('.heic')||name.endsWith('.heif')||file.type==='image/heic'||file.type==='image/heif'){
+    showBusy('转换 HEIC 中…');
+    if(await ensureHeic() && window.heic2any){
+      try{
+        const out=await heic2any({blob:file,toType:'image/jpeg',quality:0.9});
+        return Array.isArray(out)?out[0]:out;
+      }catch(_){}
+    }
+  }
+  if(file.type==='image/jpeg'||name.endsWith('.jpg')||name.endsWith('.jpeg')){
+    const f=await extractMotionPhoto(file); if(f) return f;
+  }
+  return file;
+}
+
+// ==================== 轨迹解析 ====================
+async function parseTrackFile(file){
+  const text=await file.text();
+  const name=file.name.toLowerCase();
+  if(name.endsWith('.geojson')||name.endsWith('.json')){
+    try{ const c=extractGeoJSONCoords(JSON.parse(text)); if(c.length>1) return {points:c,format:'GeoJSON'}; }catch(_){}
+  }
+  if(/\.(gpx|kml|tcx|xml)$/.test(name)){
+    try{
+      const xml=new DOMParser().parseFromString(text,'text/xml');
+      if(!xml.querySelector('parsererror')){
+        const k=extractKMLCoords(xml); if(k.length>1) return {points:k,format:'KML'};
+        const g=extractGPXCoords(xml);  if(g.length>1) return {points:g,format:'GPX'};
+      }
+    }catch(_){}
+  }
+  const t=extractTextCoords(text); if(t.length>1) return {points:t,format:'CSV'};
+  return null;
+}
+function extractGPXCoords(xml){
+  const pts=[];
+  xml.querySelectorAll('trkpt').forEach(el=>{
+    const lat=parseFloat(el.getAttribute('lat')),lon=parseFloat(el.getAttribute('lon'));
+    if(!isNaN(lat)&&!isNaN(lon)) pts.push({lng:lon,lat});
+  });
+  if(pts.length===0) xml.querySelectorAll('rtept').forEach(el=>{
+    const lat=parseFloat(el.getAttribute('lat')),lon=parseFloat(el.getAttribute('lon'));
+    if(!isNaN(lat)&&!isNaN(lon)) pts.push({lng:lon,lat});
+  });
+  return pts;
+}
+function extractKMLCoords(xml){
+  const track=[];
+  xml.querySelectorAll('gx\\:coord, coord').forEach(el=>{
+    if(el.closest('gx\\:Track, Track')){
+      const p=el.textContent.trim().split(/\s+/);
+      const lng=parseFloat(p[0]),lat=parseFloat(p[1]);
+      if(!isNaN(lng)&&!isNaN(lat)) track.push({lng,lat});
+    }
+  });
+  if(track.length) return track;
+  const line=[];
+  xml.querySelectorAll('LineString coordinates, Polygon coordinates').forEach(el=>{
+    el.textContent.trim().split(/\s+/).forEach(chunk=>{
+      const p=chunk.split(','); const lng=parseFloat(p[0]),lat=parseFloat(p[1]);
+      if(!isNaN(lng)&&!isNaN(lat)) line.push({lng,lat});
+    });
+  });
+  if(line.length) return line;
+  const pt=[];
+  xml.querySelectorAll('Placemark Point coordinates').forEach(el=>{
+    const p=el.textContent.trim().split(','); const lng=parseFloat(p[0]),lat=parseFloat(p[1]);
+    if(!isNaN(lng)&&!isNaN(lat)) pt.push({lng,lat});
+  });
+  return pt;
+}
+function extractGeoJSONCoords(geojson){
+  const pts=[];
+  (function walk(o){
+    if(!o) return;
+    if(o.type==='LineString'&&Array.isArray(o.coordinates)) for(const c of o.coordinates) if(c.length>=2) pts.push({lng:c[0],lat:c[1]});
+    if(o.type==='MultiLineString'&&Array.isArray(o.coordinates)) for(const l of o.coordinates) for(const c of l) if(c.length>=2) pts.push({lng:c[0],lat:c[1]});
+    if(o.features) o.features.forEach(walk);
+    if(o.geometry) walk(o.geometry);
+  })(geojson);
+  return pts;
+}
+function extractTextCoords(text){
+  const out=[];
+  for(const line of text.trim().split(/[\n\r]+/)){
+    const p=line.trim().split(/[,;\t\s]+/);
+    if(p.length>=2){
+      const a=parseFloat(p[0]),b=parseFloat(p[1]);
+      if(!isNaN(a)&&!isNaN(b)){
+        if(Math.abs(a)>90) out.push({lng:a,lat:b});
+        else if(Math.abs(b)>90) out.push({lng:b,lat:a});
+        else out.push({lng:b,lat:a});
+      }
+    }
+  }
+  return out;
+}
+
+// ==================== 几何（已单测验证） ====================
+function mercatorX(lon){ return lon*(Math.PI/180)*6378137; }
+function mercatorY(lat){ const r=lat*(Math.PI/180); return 6378137*Math.log(Math.tan(Math.PI/4+r/2)); }
+function smoothTrack(points,target){
+  if(points.length>=target||points.length<3) return points;
+  const per=Math.ceil(target/(points.length-1));
+  const w=[...points];
+  w.unshift({lng:points[0].lng*2-points[1].lng,lat:points[0].lat*2-points[1].lat});
+  w.push({lng:points.at(-1).lng*2-points.at(-2).lng,lat:points.at(-1).lat*2-points.at(-2).lat});
+  const r=[];
+  for(let i=1;i<w.length-2;i++){
+    const p0=w[i-1],p1=w[i],p2=w[i+1],p3=w[i+2];
+    for(let t=0;t<per;t++){
+      const tt=t/per,t2=tt*tt,t3=t2*tt;
+      r.push({
+        lng:0.5*((2*p1.lng)+(-p0.lng+p2.lng)*tt+(2*p0.lng-5*p1.lng+4*p2.lng-p3.lng)*t2+(-p0.lng+3*p1.lng-3*p2.lng+p3.lng)*t3),
+        lat:0.5*((2*p1.lat)+(-p0.lat+p2.lat)*tt+(2*p0.lat-5*p1.lat+4*p2.lat-p3.lat)*t2+(-p0.lat+3*p1.lat-3*p2.lat+p3.lat)*t3),
+      });
+    }
+  }
+  r.push({...points.at(-1)});
+  return r;
+}
+function projectTrack(points,fullSize){
+  const sm=smoothTrack(points,500);
+  const xs=sm.map(p=>mercatorX(p.lng)), ys=sm.map(p=>mercatorY(p.lat));
+  const xMin=Math.min(...xs),xMax=Math.max(...xs),yMin=Math.min(...ys),yMax=Math.max(...ys);
+  const xR=xMax-xMin||1, yR=yMax-yMin||1;
+  const maxR=Math.max(xR,yR), half=maxR/2+Math.max(xR*0.05,yR*0.05);
+  const xc=(xMin+xMax)/2, yc=(yMin+yMax)/2;
+  const xLow=xc-half,xHigh=xc+half,yLow=yc-half,yHigh=yc+half;
+  const mapX=mx=>((mx-xLow)/(xHigh-xLow))*fullSize;
+  const mapY=my=>fullSize-((my-yLow)/(yHigh-yLow))*fullSize;
+  return {points:xs.map((x,i)=>({x:mapX(x),y:mapY(ys[i])}))};
+}
+
+function trackDistanceKm(points){
+  if(!points||points.length<2) return 0;
+  const R=6371000,toR=Math.PI/180; let m=0;
+  for(let i=1;i<points.length;i++){
+    const a=points[i-1],b=points[i];
+    const dLat=(b.lat-a.lat)*toR,dLng=(b.lng-a.lng)*toR;
+    const h=Math.sin(dLat/2)**2+Math.cos(a.lat*toR)*Math.cos(b.lat*toR)*Math.sin(dLng/2)**2;
+    m+=2*R*Math.asin(Math.sqrt(h));
+  }
+  return m/1000;
+}
+
+// ==================== 轨迹渲染与切片 ====================
+function strokePath(ctx,proj,color,width){
+  ctx.strokeStyle=color; ctx.lineWidth=width; ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.beginPath(); ctx.moveTo(proj.points[0].x,proj.points[0].y);
+  for(let i=1;i<proj.points.length;i++) ctx.lineTo(proj.points[i].x,proj.points[i].y);
+  ctx.stroke();
+}
+function rebuildOverlay(){
+  if(!trackPoints){ overlayCells=new Array(9).fill(null); return; }
+  const color=$('trackColor').value, width=+$('trackWidth').value;
+  const full=document.createElement('canvas');
+  full.width=full.height=CUSTOM_FULL_SIZE;
+  strokePath(full.getContext('2d'),projectTrack(trackPoints,CUSTOM_FULL_SIZE),color,width);
+  overlayCells=[];
+  for(let row=0;row<3;row++) for(let col=0;col<3;col++){
+    const c=document.createElement('canvas'); c.width=c.height=CUSTOM_CELL_SIZE;
+    c.getContext('2d').drawImage(full,col*CUSTOM_CELL_SIZE,row*CUSTOM_CELL_SIZE,CUSTOM_CELL_SIZE,CUSTOM_CELL_SIZE,0,0,CUSTOM_CELL_SIZE,CUSTOM_CELL_SIZE);
+    overlayCells.push(c);
+  }
+}
+function renderTrackThumb(){
+  const canvas=$('trackThumb'); const size=160;
+  canvas.width=canvas.height=size;
+  const ctx=canvas.getContext('2d');
+  ctx.clearRect(0,0,size,size);
+  ctx.fillStyle='rgba(0,0,0,.3)'; ctx.fillRect(0,0,size,size);
+  if(trackPoints){
+    const proj=projectTrack(trackPoints,size);
+    strokePath(ctx,proj,$('trackColor').value,Math.max(1.5,+$('trackWidth').value*size/CUSTOM_FULL_SIZE));
+  }
+  ctx.strokeStyle='rgba(255,255,255,.15)'; ctx.lineWidth=.5;
+  for(let i=1;i<3;i++){
+    ctx.beginPath();ctx.moveTo(i*size/3,0);ctx.lineTo(i*size/3,size);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,i*size/3);ctx.lineTo(size,i*size/3);ctx.stroke();
+  }
+}
+
+// ==================== 图片上传与缩放 ====================
+function loadImage(src){
+  return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(); i.src=src; });
+}
+function cachedLoadImage(src){
+  if(imageCache.has(src)) return Promise.resolve(imageCache.get(src));
+  return loadImage(src).then(i=>{ imageCache.set(src,i); return i; });
+}
+async function handleFile(file,idx){
+  try{
+    const blob=await autoConvertPhoto(file);
+    const dataUrl=await new Promise(r=>{ const fr=new FileReader(); fr.onload=e=>r(e.target.result); fr.readAsDataURL(blob); });
+    const img=await loadImage(dataUrl);
+    const maxSide=Math.max(img.naturalWidth,img.naturalHeight);
+    const scale=Math.min(1,CELL_MAX/maxSide);
+    const w=Math.round(img.naturalWidth*scale),h=Math.round(img.naturalHeight*scale);
+    const c=document.createElement('canvas'); c.width=w;c.height=h;
+    c.getContext('2d').drawImage(img,0,0,w,h);
+    images[idx]=c.toDataURL('image/jpeg',0.9);
+    renderGrid(); updatePreview();
+  }finally{ hideBusy(); }
+}
+function fillFrom(files,startIdx){
+  let next = startIdx!=null ? startIdx : images.findIndex(v=>v===null);
+  if(next===-1) return;
+  for(const f of files){ if(next>=9) break; handleFile(f,next++); }
+}
+
+// ==================== 九宫格渲染 + 原生拖拽交换 ====================
+let dragSrc=null;
+function renderGrid(){
+  const grid=$('grid9'); grid.innerHTML='';
+  for(let i=0;i<9;i++){
+    const cell=document.createElement('div');
+    cell.className='cell'+(images[i]?' filled':'');
+    cell.dataset.idx=i;
+    cell.draggable=!!images[i];
+    if(images[i]){
+      cell.innerHTML=`<span class="badge">${i+1}</span><button class="rm" title="移除">×</button><img src="${images[i]}" alt="">`;
+      cell.querySelector('.rm').addEventListener('click',e=>{ e.stopPropagation(); images[i]=null; renderGrid(); updatePreview(); });
+    }else{
+      cell.innerHTML='<span class="plus">+</span>';
+    }
+    cell.addEventListener('click',()=>{ if(!images[i]||!cell.querySelector('.rm:hover')) triggerSingle(i); });
+    // 拖拽交换
+    cell.addEventListener('dragstart',e=>{ dragSrc=i; cell.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
+    cell.addEventListener('dragend',()=>{ dragSrc=null; cell.classList.remove('dragging'); document.querySelectorAll('.cell').forEach(c=>c.classList.remove('drop-target')); });
+    cell.addEventListener('dragover',e=>{ if(dragSrc!==null){ e.preventDefault(); cell.classList.add('drop-target'); } });
+    cell.addEventListener('dragleave',()=>cell.classList.remove('drop-target'));
+    cell.addEventListener('drop',e=>{
+      e.preventDefault();
+      if(dragSrc!==null && dragSrc!==i){ const t=images[i]; images[i]=images[dragSrc]; images[dragSrc]=t; renderGrid(); updatePreview(); }
+    });
+    grid.appendChild(cell);
+  }
+}
+function triggerSingle(idx){
+  const input=document.createElement('input');
+  input.type='file'; input.accept='image/*,.heic,.heif';
+  input.onchange=()=>{ if(input.files[0]) handleFile(input.files[0],idx); };
+  input.click();
+}
+
+// ==================== 合成预览 ====================
+// 在合成图底部画标题/日期/里程文字卡片（字号随画布尺寸自适应）
+function drawTextCard(ctx){
+  const t=textOverlay;
+  const w=ctx.canvas.width, h=ctx.canvas.height, L=Math.min(w,h);
+  const info=[t.date,t.distance].filter(Boolean).join('   ·   ');
+  if(!t.title && !info) return;
+  ctx.save();
+  const grad=ctx.createLinearGradient(0,h*0.45,0,h);
+  grad.addColorStop(0,'rgba(0,0,0,0)'); grad.addColorStop(1,'rgba(0,0,0,0.74)');
+  ctx.fillStyle=grad; ctx.fillRect(0,h*0.45,w,h*0.55);
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.shadowColor='rgba(0,0,0,0.45)'; ctx.shadowBlur=L*0.012; ctx.shadowOffsetY=L*0.004;
+  const pad=L*0.075; let y=h-pad;
+  if(info){
+    ctx.font=`600 ${Math.round(L*0.052)}px "PingFang SC","Microsoft YaHei",sans-serif`;
+    ctx.fillStyle='rgba(255,255,255,0.92)'; ctx.fillText(info,pad,y);
+    y-=L*0.078;
+  }
+  if(t.title){
+    ctx.font=`800 ${Math.round(L*0.094)}px "PingFang SC","Microsoft YaHei",sans-serif`;
+    ctx.fillStyle='#fff'; ctx.fillText(t.title,pad,y);
+  }
+  ctx.restore();
+}
+function drawCell(ctx,userImg,overlay,idx){
+  const cw=ctx.canvas.width,ch=ctx.canvas.height;
+  const iw=userImg.naturalWidth||userImg.width, ih=userImg.naturalHeight||userImg.height;
+  ctx.clearRect(0,0,cw,ch);
+  if(cropMode==='keep'){
+    const s=Math.min(cw/iw,ch/ih), dw=iw*s, dh=ih*s, dx=(cw-dw)/2, dy=(ch-dh)/2;
+    ctx.drawImage(userImg,dx,dy,dw,dh);
+    if(overlay){ const side=Math.min(dw,dh); ctx.drawImage(overlay,(cw-side)/2,(ch-side)/2,side,side); }
+  }else{
+    const side=Math.min(iw,ih), sx=(iw-side)/2, sy=(ih-side)/2;
+    ctx.drawImage(userImg,sx,sy,side,side,0,0,cw,ch);
+    if(overlay) ctx.drawImage(overlay,0,0,cw,ch);
+  }
+  if(textOverlay.enabled && idx===textOverlay.cell) drawTextCard(ctx);
+}
+function updatePreview(){
+  const anyFilled=images.some(v=>v), allFilled=images.every(v=>v);
+  $('previewWrap').classList.toggle('show',anyFilled);
+  $('downloadBtn').disabled=!allFilled;
+  if(!anyFilled) return;
+  const grid=$('previewGrid'); grid.innerHTML='';
+  for(let i=0;i<9;i++){
+    if(images[i]){
+      const c=document.createElement('canvas'); c.width=c.height=PREVIEW_SIZE; grid.appendChild(c);
+      cachedLoadImage(images[i]).then(img=>drawCell(c.getContext('2d'),img,overlayCells[i],i));
+    }else{
+      const ph=document.createElement('div'); ph.className='ph'; ph.textContent='?'; grid.appendChild(ph);
+    }
+  }
+}
+
+// ==================== 高清合成 + 导出 ====================
+async function compositeHighRes(idx){
+  const img=await loadImage(images[idx]);
+  const iw=img.naturalWidth,ih=img.naturalHeight;
+  const c=document.createElement('canvas'); const ctx=c.getContext('2d');
+  const overlay=overlayCells[idx];
+  if(cropMode==='keep'){
+    c.width=iw;c.height=ih; ctx.drawImage(img,0,0,iw,ih);
+    if(overlay){ const side=Math.min(iw,ih); ctx.drawImage(overlay,(iw-side)/2,(ih-side)/2,side,side); }
+  }else{
+    const side=Math.min(iw,ih), sx=(iw-side)/2, sy=(ih-side)/2;
+    c.width=c.height=side; ctx.drawImage(img,sx,sy,side,side,0,0,side,side);
+    if(overlay) ctx.drawImage(overlay,0,0,side,side);
+  }
+  if(textOverlay.enabled && idx===textOverlay.cell) drawTextCard(ctx);
+  return c;
+}
+function canvasToBytes(canvas){
+  return new Promise(res=>canvas.toBlob(b=>b.arrayBuffer().then(a=>res(new Uint8Array(a))),'image/jpeg',0.92));
+}
+async function doDownload(){
+  if(!images.every(v=>v)) return;
+  showBusy('正在合成高清图…');
+  try{
+    const files=[];
+    for(let i=0;i<9;i++){
+      const canvas=await compositeHighRes(i);
+      files.push({name:`${i+1}.jpg`,data:await canvasToBytes(canvas)});
+    }
+    const zip=buildStoreZip(files);
+    const blob=new Blob([zip],{type:'application/zip'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download='轨迹九宫格.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  }finally{ hideBusy(); }
+}
+
+// ==================== 零依赖 ZIP（STORE，已单测验证） ====================
+const CRC_TABLE=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);t[n]=c>>>0;}return t;})();
+function crc32(b){let c=0xFFFFFFFF;for(let i=0;i<b.length;i++)c=CRC_TABLE[(c^b[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+function buildStoreZip(files){
+  const enc=new TextEncoder(); const chunks=[],central=[]; let offset=0;
+  for(const f of files){
+    const nb=enc.encode(f.name),data=f.data,crc=crc32(data),size=data.length;
+    const lfh=new Uint8Array(30+nb.length),lv=new DataView(lfh.buffer);
+    lv.setUint32(0,0x04034b50,true);lv.setUint16(4,20,true);lv.setUint16(8,0,true);
+    lv.setUint16(10,0,true);lv.setUint16(12,0x21,true);lv.setUint32(14,crc,true);
+    lv.setUint32(18,size,true);lv.setUint32(22,size,true);lv.setUint16(26,nb.length,true);
+    lfh.set(nb,30); chunks.push(lfh,data);
+    const cdh=new Uint8Array(46+nb.length),cv=new DataView(cdh.buffer);
+    cv.setUint32(0,0x02014b50,true);cv.setUint16(4,20,true);cv.setUint16(6,20,true);
+    cv.setUint16(12,0,true);cv.setUint16(14,0x21,true);cv.setUint32(16,crc,true);
+    cv.setUint32(20,size,true);cv.setUint32(24,size,true);cv.setUint16(28,nb.length,true);
+    cv.setUint32(42,offset,true); cdh.set(nb,46); central.push(cdh);
+    offset+=lfh.length+data.length;
+  }
+  const cSize=central.reduce((s,c)=>s+c.length,0),cOff=offset;
+  const eocd=new Uint8Array(22),ev=new DataView(eocd.buffer);
+  ev.setUint32(0,0x06054b50,true);ev.setUint16(8,files.length,true);ev.setUint16(10,files.length,true);
+  ev.setUint32(12,cSize,true);ev.setUint32(16,cOff,true);
+  const all=[...chunks,...central,eocd],total=all.reduce((s,c)=>s+c.length,0);
+  const out=new Uint8Array(total);let p=0;for(const c of all){out.set(c,p);p+=c.length;}
+  return out;
+}
+
+// ==================== UI 辅助 ====================
+function showBusy(t){ $('busyText').textContent=t; $('busy').classList.add('show'); }
+function hideBusy(){ $('busy').classList.remove('show'); }
+
+async function loadTrack(file){
+  showBusy('解析轨迹中…');
+  try{
+    const r=await parseTrackFile(file);
+    if(!r){ alert('未能从该文件解析出轨迹坐标，请确认是 GPX/KML/GeoJSON/TCX/CSV 轨迹文件。'); return; }
+    trackPoints=r.points;
+    $('trackFmt').textContent=r.format;
+    $('trackPts').textContent=r.points.length;
+    $('trackBody').classList.add('show');
+    const km=trackDistanceKm(r.points);
+    if(km>0){ $('textDist').value=km.toFixed(1)+' km'; textOverlay.distance=$('textDist').value; }
+    rebuildOverlay(); renderTrackThumb(); updatePreview();
+  }finally{ hideBusy(); }
+}
+function clearTrack(){
+  trackPoints=null; overlayCells=new Array(9).fill(null);
+  $('trackBody').classList.remove('show');
+  updatePreview();
+}
+
+// ==================== 事件绑定 ====================
+function bindDrop(el,accept,onFiles){
+  el.addEventListener('dragenter',e=>{e.preventDefault();el.classList.add('over');});
+  el.addEventListener('dragover',e=>{e.preventDefault();});
+  el.addEventListener('dragleave',e=>{e.preventDefault();el.classList.remove('over');});
+  el.addEventListener('drop',e=>{e.preventDefault();el.classList.remove('over');
+    const fs=Array.from(e.dataTransfer.files).filter(accept); if(fs.length) onFiles(fs);});
+}
+function init(){
+  // 色板
+  const sw=$('swatches');
+  SWATCH_COLORS.forEach(col=>{
+    const d=document.createElement('div'); d.className='swatch'; d.style.background=col; d.dataset.col=col;
+    d.addEventListener('click',()=>{ $('trackColor').value=col; syncSwatch(); rebuildOverlay(); renderTrackThumb(); updatePreview(); });
+    sw.appendChild(d);
+  });
+  syncSwatch();
+
+  // 轨迹上传
+  $('trackDrop').addEventListener('click',()=>$('trackInput').click());
+  $('trackInput').addEventListener('change',e=>{ if(e.target.files[0]) loadTrack(e.target.files[0]); e.target.value=''; });
+  bindDrop($('trackDrop'),f=>/\.(gpx|kml|geojson|json|tcx|xml|csv|txt)$/i.test(f.name),fs=>loadTrack(fs[0]));
+  $('trackColor').addEventListener('input',()=>{ syncSwatch(); rebuildOverlay(); renderTrackThumb(); updatePreview(); });
+  $('trackWidth').addEventListener('input',debounce(()=>{ rebuildOverlay(); renderTrackThumb(); updatePreview(); },120));
+  $('trackClear').addEventListener('click',clearTrack);
+
+  // 照片
+  $('batchBtn').addEventListener('click',()=>$('batchInput').click());
+  $('batchInput').addEventListener('change',e=>{ fillFrom(Array.from(e.target.files)); e.target.value=''; });
+  $('clearBtn').addEventListener('click',()=>{ images.fill(null); imageCache.clear(); renderGrid(); updatePreview(); });
+  bindDrop($('grid9'),f=>f.type.startsWith('image/')||/\.(heic|heif|jpg|jpeg|png|webp)$/i.test(f.name),fs=>fillFrom(fs));
+
+  // 裁切模式
+  $('modeCrop').addEventListener('click',()=>setMode('crop'));
+  $('modeKeep').addEventListener('click',()=>setMode('keep'));
+
+  $('downloadBtn').addEventListener('click',doDownload);
+
+  // 文字标注
+  const sel=$('textCell');
+  for(let i=0;i<9;i++){ const o=document.createElement('option'); o.value=i; o.textContent='第 '+(i+1)+' 格'; sel.appendChild(o); }
+  const syncText=()=>{
+    textOverlay.enabled=$('textEnable').checked;
+    textOverlay.title=$('textTitle').value;
+    textOverlay.date=$('textDate').value;
+    textOverlay.distance=$('textDist').value;
+    textOverlay.cell=+$('textCell').value;
+    $('textFields').classList.toggle('show',textOverlay.enabled);
+    updatePreview();
+  };
+  ['textEnable','textTitle','textDate','textDist','textCell'].forEach(id=>{ $(id).addEventListener('input',syncText); $(id).addEventListener('change',syncText); });
+
+  renderGrid(); updatePreview();
+}
+function setMode(m){
+  cropMode=m;
+  $('modeCrop').classList.toggle('on',m==='crop');
+  $('modeKeep').classList.toggle('on',m==='keep');
+  updatePreview();
+}
+function syncSwatch(){
+  const cur=$('trackColor').value.toLowerCase();
+  document.querySelectorAll('.swatch').forEach(s=>s.classList.toggle('on',s.dataset.col.toLowerCase()===cur));
+}
+function debounce(fn,d){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),d); }; }
+
+init();
+</script>
+</body>
+</html>
