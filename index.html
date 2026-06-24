@@ -54,6 +54,13 @@ input[type=color]{width:38px;height:30px;border:1px solid var(--border);border-r
 .swatches{display:flex;gap:6px}
 .swatch{width:22px;height:22px;border-radius:6px;cursor:pointer;border:2px solid transparent}
 .swatch.on{border-color:#fff}
+.file-list{display:flex;flex-direction:column;gap:5px;margin:6px 0}
+.file-row{display:flex;align-items:center;gap:7px;font-size:12.5px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;padding:5px 8px}
+.file-row .seq{width:18px;height:18px;border-radius:50%;background:var(--accent);color:#06210f;font-weight:700;font-size:11px;display:grid;place-items:center;flex:none}
+.file-row .fname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-row .fmeta{color:var(--muted);font-size:11px;flex:none}
+.file-row button{background:rgba(255,255,255,.08);border:1px solid var(--border);color:var(--text);width:22px;height:22px;border-radius:6px;cursor:pointer;font-size:12px;line-height:1;flex:none}
+.file-row button:hover{background:rgba(255,255,255,.16)}
 
 /* 九宫格 */
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
@@ -111,6 +118,19 @@ input[type=color]{width:38px;height:30px;border:1px solid var(--border);border-r
 .hint{font-size:12.5px;color:var(--muted);text-align:center;margin-top:12px}
 .foot{text-align:center;color:var(--muted);font-size:12px;margin-top:36px;line-height:1.8}
 .foot a{color:var(--sub)}
+.about summary{cursor:pointer;font-size:15px;font-weight:700;list-style:none;padding:2px 0;color:var(--text)}
+.about summary::-webkit-details-marker{display:none}
+.about summary::before{content:'▸ ';color:var(--accent)}
+.about[open] summary::before{content:'▾ '}
+.about-body{margin-top:14px;font-size:13.5px;color:var(--sub);line-height:1.78}
+.about-body h4{color:var(--text);font-size:14px;margin:18px 0 6px}
+.about-body h4:first-child{margin-top:0}
+.about-body b{color:var(--text)}
+.about-body code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:4px;font-size:12px}
+.about-body ul{margin:4px 0 4px 4px;list-style:none}
+.about-body li{margin:5px 0;padding-left:16px;position:relative}
+.about-body li::before{content:'·';position:absolute;left:4px;color:var(--accent)}
+.about-body .tip{margin-top:14px;padding:10px 14px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.28);border-radius:10px;color:#bff0d0}
 .busy{display:none;align-items:center;gap:8px;color:var(--accent);font-size:13px;margin-top:10px}
 .busy.show{display:flex}
 .spin{width:14px;height:14px;border:2px solid rgba(74,222,128,.3);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite}
@@ -134,18 +154,19 @@ input[type=color]{width:38px;height:30px;border:1px solid var(--border);border-r
     <div class="step-head">
       <div class="step-no">1</div>
       <div class="step-title">导入运动轨迹</div>
-      <div class="step-sub">可选 · GPX / KML / GeoJSON / TCX / CSV</div>
+      <div class="step-sub">可选 · GPX / KML / GeoJSON / TCX / FIT · 可多选拼接</div>
     </div>
     <div id="trackDrop" class="dropzone">
-      <div class="big">点击或拖入轨迹文件</div>
-      <div class="small">支持 Strava / Garmin / 行者 / 黑鸟单车 / 两步路 等导出的 .gpx .kml .geojson .tcx</div>
+      <div class="big">点击或拖入轨迹文件（可多选）</div>
+      <div class="small">.gpx .kml .geojson .tcx .fit — 来自 Strava / 佳明 / 行者 / 黑鸟 / 两步路 / 顽鹿码表等。多个文件会按顺序首尾拼接成一条轨迹（适合码表分段记录的多日骑行）。</div>
     </div>
-    <input type="file" id="trackInput" accept=".gpx,.kml,.geojson,.json,.tcx,.xml,.csv,.txt" hidden>
+    <input type="file" id="trackInput" accept=".gpx,.kml,.geojson,.json,.tcx,.xml,.csv,.txt,.fit" multiple hidden>
 
     <div id="trackBody" class="track-body">
       <canvas id="trackThumb"></canvas>
       <div class="track-meta">
-        <div class="fmt">格式 <b id="trackFmt">—</b> · 共 <b id="trackPts">0</b> 个轨迹点</div>
+        <div class="fmt">共 <b id="trackFileCount">0</b> 段 · <b id="trackPts">0</b> 个轨迹点</div>
+        <div class="file-list" id="fileList"></div>
         <div class="ctrl-row">
           <label>颜色</label>
           <div class="swatches" id="swatches"></div>
@@ -214,6 +235,37 @@ input[type=color]{width:38px;height:30px;border:1px solid var(--border);border-r
     <div class="hint">微信朋友圈按 1→9 顺序选图，即可拼成完整九宫格。</div>
   </section>
 
+  <section class="card">
+    <details class="about">
+      <summary>数据是怎么算的？为什么和我的 App 不一样？</summary>
+      <div class="about-body">
+        <h4>这些数字怎么来的</h4>
+        <ul>
+          <li><b>距离</b>：把相邻 GPS 点之间的直线距离用 Haversine 公式逐段累加。最准，各文件都能算。</li>
+          <li><b>时长（运动时长）</b>：逐段累加时间，但相邻点速度低于 <code>0.5 m/s</code> 的停顿段（等红灯、休息、过夜）不计入。</li>
+          <li><b>均速 / 配速</b>：距离 ÷ 运动时长。</li>
+          <li><b>总爬升</b>：先对海拔序列做移动平均平滑（窗口 ±5 点）去掉 GPS 抖动，再累计「相对参考点上升超过 5 米」的部分。直接累加每点正高差会因噪声虚高数倍。</li>
+        </ul>
+        <h4>为什么和你的 App（Strava / 两步路 / 码表）可能对不上</h4>
+        <ul>
+          <li><b>导出有损耗</b>：导出成 GPX/KML 时，App 内部的精确停顿、气压计海拔等会丢失或简化。</li>
+          <li><b>算法各家不同</b>：停顿判定、爬升口径都是各 App 的专有逻辑。例：两步路不自动暂停（停下还在记），码表自动暂停，两者「运动时长」能差几小时——这种情况下去噪后的值反而更贴近你真正在运动的时间。</li>
+          <li><b>海拔数据源不同</b>：气压计测的爬升比 GPS 海拔准得多，而导出文件里通常只有 GPS 海拔。</li>
+        </ul>
+        <h4>这些文件都记录了什么</h4>
+        <ul>
+          <li><b>GPX</b>：最通用的文本格式，一串带时间戳 <code>&lt;time&gt;</code> 和海拔 <code>&lt;ele&gt;</code> 的经纬度点。</li>
+          <li><b>KML</b>：文本格式，轨迹放在 <code>gx:Track</code> 或 <code>LineString</code> 里，可含时间和海拔。</li>
+          <li><b>TCX</b>：佳明的文本格式，类似 GPX，额外记录距离、心率等。</li>
+          <li><b>FIT</b>：佳明 / 顽鹿等码表的二进制格式，最紧凑、信息最全；码表通常自动暂停，数据最干净。</li>
+          <li><b>GeoJSON</b>：通用地理格式，常常只有坐标（可能没时间 / 海拔）。</li>
+          <li>只有坐标、没有时间和海拔的文件（如手画的规划路线），就只能算出距离。</li>
+        </ul>
+        <div class="tip">满意就用算出来的，不满意就直接在输入框改成你 App 里的官方值——所有数字都能手填。距离基本都准，时长 / 爬升是合理估算。</div>
+      </div>
+    </details>
+  </section>
+
   <div class="foot">
     纯前端 · 零后端 · 完全离线 · 开源自部署 · 照片与轨迹不出本机<br>
     轨迹解析 · Catmull-Rom 平滑 · Web Mercator 投影 · Canvas 合成 · 零依赖 ZIP 打包
@@ -234,7 +286,8 @@ const PREVIEW_SIZE = 300;
 const SWATCH_COLORS = ['#fb923c','#f87171','#4ade80','#38bdf8','#a78bfa','#fde047','#ffffff'];
 
 const images = new Array(9).fill(null);   // 每格的 dataURL（已缩放）
-let trackPoints = null;                   // [{lng,lat}]
+let trackPoints = null;                   // [{lng,lat,ele?,time?}] 所有段合并后
+let trackFiles = [];                      // [{name,format,points}] 按顺序首尾拼接
 let overlayCells = new Array(9).fill(null); // 9 个轨迹叠层 canvas
 let cropMode = 'crop';                    // 'crop' | 'keep'
 const METRICS=[
@@ -311,9 +364,40 @@ async function autoConvertPhoto(file){
 }
 
 // ==================== 轨迹解析 ====================
+// 最小 FIT 解析器：从 Garmin/顽鹿 .fit 二进制提取 record(global 20) 的经纬度/海拔/时间
+function parseFIT(buf){
+  const b=buf instanceof Uint8Array?buf:new Uint8Array(buf);
+  if(b.length<14) return [];
+  const dv=new DataView(b.buffer,b.byteOffset,b.byteLength);
+  const headerSize=b[0];
+  if(String.fromCharCode(b[8],b[9],b[10],b[11])!=='.FIT') return [];
+  const dataSize=dv.getUint32(4,true);
+  let pos=headerSize; const end=Math.min(headerSize+dataSize,b.length);
+  const defs={}, points=[]; const SEMI=180/2147483648, EPOCH=631065600;
+  const readVal=(off,size,le,signed)=>{ if(size>=4) return signed?dv.getInt32(off,le):dv.getUint32(off,le); if(size===2) return signed?dv.getInt16(off,le):dv.getUint16(off,le); if(size===1) return signed?dv.getInt8(off):dv.getUint8(off); return null; };
+  const readData=(def,p)=>{ const v={}; for(const f of def.fields){ if([0,1,2,78,253].includes(f.num)){ v[f.num]=readVal(p,Math.min(f.size,4),def.le,f.num===0||f.num===1); } p+=f.size; } p+=def.devTotal; return {pos:p,v}; };
+  const pushPoint=v=>{ const lat=v[0],lng=v[1]; if(lat==null||lng==null||lat===0x7FFFFFFF||lng===0x7FFFFFFF) return; const p={lat:lat*SEMI,lng:lng*SEMI}; if(v[78]!=null&&v[78]!==0xFFFFFFFF) p.ele=v[78]/5-500; else if(v[2]!=null&&v[2]!==0xFFFF) p.ele=v[2]/5-500; if(v[253]!=null&&v[253]!==0xFFFFFFFF) p.time=(v[253]+EPOCH)*1000; points.push(p); };
+  while(pos<end){
+    const h=b[pos++];
+    if(h&0x80){ const lt=(h>>5)&0x3,def=defs[lt]; if(!def) break; const r=readData(def,pos); pos=r.pos; if(def.g===20) pushPoint(r.v); continue; }
+    const isDef=(h&0x40)!==0,hasDev=(h&0x20)!==0,lt=h&0x0f;
+    if(isDef){
+      pos++; const le=b[pos++]===0; const g=dv.getUint16(pos,le); pos+=2;
+      const nf=b[pos++]; const fields=[];
+      for(let i=0;i<nf;i++){ fields.push({num:b[pos],size:b[pos+1]}); pos+=3; }
+      let devTotal=0; if(hasDev){ const nd=b[pos++]; for(let i=0;i<nd;i++){ devTotal+=b[pos+1]; pos+=3; } }
+      defs[lt]={g,fields,le,devTotal};
+    } else { const def=defs[lt]; if(!def) break; const r=readData(def,pos); pos=r.pos; if(def.g===20) pushPoint(r.v); }
+  }
+  return points;
+}
 async function parseTrackFile(file){
-  const text=await file.text();
   const name=file.name.toLowerCase();
+  if(name.endsWith('.fit')){
+    const pts=parseFIT(new Uint8Array(await file.arrayBuffer()));
+    return pts.length>1 ? {points:pts,format:'FIT'} : null;
+  }
+  const text=await file.text();
   if(name.endsWith('.geojson')||name.endsWith('.json')){
     try{ const c=extractGeoJSONCoords(JSON.parse(text)); if(c.length>1) return {points:c,format:'GeoJSON'}; }catch(_){}
   }
@@ -750,21 +834,50 @@ function fillMetricsFromTrack(pts){
   const p=paceSecPerKm(pts); set('pace', p?formatPace(p)+' /km':'');
   const e=elevationGainM(pts); set('elevation', e!=null?e+' 米':'');
 }
-async function loadTrack(file){
+async function loadTrackFiles(files){
   showBusy('解析轨迹中…');
   try{
-    const r=await parseTrackFile(file);
-    if(!r){ alert('未能从该文件解析出轨迹坐标，请确认是 GPX/KML/GeoJSON/TCX/CSV 轨迹文件。'); return; }
-    trackPoints=r.points;
-    $('trackFmt').textContent=r.format;
-    $('trackPts').textContent=r.points.length;
-    $('trackBody').classList.add('show');
-    fillMetricsFromTrack(r.points);
-    rebuildOverlay(); renderTrackThumb(); updatePreview();
+    const failed=[]; let added=0;
+    for(const file of files){
+      const r=await parseTrackFile(file);
+      if(r){ trackFiles.push({name:file.name,format:r.format,points:r.points}); added++; }
+      else failed.push(file.name);
+    }
+    if(failed.length) alert('无法解析：'+failed.join('、')+'\n请确认是 GPX / KML / GeoJSON / TCX / FIT 轨迹文件。');
+    if(added) recomputeTrack();
   }finally{ hideBusy(); }
 }
+function recomputeTrack(){
+  trackPoints = trackFiles.length ? trackFiles.flatMap(f=>f.points) : null;
+  if(!trackPoints){ clearTrack(); return; }
+  $('trackFileCount').textContent=trackFiles.length;
+  $('trackPts').textContent=trackPoints.length;
+  $('trackBody').classList.add('show');
+  renderFileList();
+  fillMetricsFromTrack(trackPoints);
+  rebuildOverlay(); renderTrackThumb(); updatePreview();
+}
+function escHtml(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function renderFileList(){
+  const el=$('fileList'); el.innerHTML='';
+  trackFiles.forEach((f,i)=>{
+    const row=document.createElement('div'); row.className='file-row';
+    row.innerHTML=`<span class="seq">${i+1}</span><span class="fname">${escHtml(f.name)}</span>`+
+      `<span class="fmeta">${f.format}·${f.points.length}</span>`+
+      `<button data-act="up" data-i="${i}" title="上移">↑</button>`+
+      `<button data-act="down" data-i="${i}" title="下移">↓</button>`+
+      `<button data-act="del" data-i="${i}" title="移除">×</button>`;
+    el.appendChild(row);
+  });
+}
+function trackFileAction(act,i){
+  if(act==='del') trackFiles.splice(i,1);
+  else if(act==='up'&&i>0) [trackFiles[i-1],trackFiles[i]]=[trackFiles[i],trackFiles[i-1]];
+  else if(act==='down'&&i<trackFiles.length-1) [trackFiles[i+1],trackFiles[i]]=[trackFiles[i],trackFiles[i+1]];
+  recomputeTrack();
+}
 function clearTrack(){
-  trackPoints=null; overlayCells=new Array(9).fill(null);
+  trackFiles=[]; trackPoints=null; overlayCells=new Array(9).fill(null);
   $('trackBody').classList.remove('show');
   updatePreview();
 }
@@ -789,8 +902,9 @@ function init(){
 
   // 轨迹上传
   $('trackDrop').addEventListener('click',()=>$('trackInput').click());
-  $('trackInput').addEventListener('change',e=>{ if(e.target.files[0]) loadTrack(e.target.files[0]); e.target.value=''; });
-  bindDrop($('trackDrop'),f=>/\.(gpx|kml|geojson|json|tcx|xml|csv|txt)$/i.test(f.name),fs=>loadTrack(fs[0]));
+  $('trackInput').addEventListener('change',e=>{ if(e.target.files.length) loadTrackFiles(Array.from(e.target.files)); e.target.value=''; });
+  bindDrop($('trackDrop'),f=>/\.(gpx|kml|geojson|json|tcx|xml|csv|txt|fit)$/i.test(f.name),fs=>loadTrackFiles(fs));
+  $('fileList').addEventListener('click',e=>{ const b=e.target.closest('button[data-act]'); if(b) trackFileAction(b.dataset.act,+b.dataset.i); });
   $('trackColor').addEventListener('input',()=>{ syncSwatch(); rebuildOverlay(); renderTrackThumb(); updatePreview(); });
   $('trackWidth').addEventListener('input',debounce(()=>{ rebuildOverlay(); renderTrackThumb(); updatePreview(); },120));
   $('trackClear').addEventListener('click',clearTrack);
