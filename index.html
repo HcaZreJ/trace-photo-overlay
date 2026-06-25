@@ -383,10 +383,22 @@ function ensureHeic(){
   });
   return heicLoading;
 }
+// 原生快路径：Safari/iOS 的浏览器自带 HEIC 解码，createImageBitmap 可直接解 → 秒级，跳过 heic2any。
+// 其它浏览器（Chrome/Firefox）不支持，会抛错，返回 null 交给 heic2any 兜底。
+async function decodeHeicNative(file){
+  if(typeof createImageBitmap!=='function') return null;
+  try{
+    const bm=await createImageBitmap(file);
+    const c=document.createElement('canvas'); c.width=bm.width; c.height=bm.height;
+    c.getContext('2d').drawImage(bm,0,0); if(bm.close) bm.close();
+    return await new Promise(r=>c.toBlob(b=>r(b),'image/jpeg',0.92));
+  }catch(_){ return null; }
+}
 async function autoConvertPhoto(file){
   const name=(file.name||'').toLowerCase();
   if(name.endsWith('.heic')||name.endsWith('.heif')||file.type==='image/heic'||file.type==='image/heif'){
     showBusy('转换 HEIC 中…');
+    const nat=await decodeHeicNative(file); if(nat) return nat; // Safari/iOS 原生秒解
     if(await ensureHeic() && window.heic2any){
       try{
         const out=await heic2any({blob:file,toType:'image/jpeg',quality:0.9});
@@ -726,6 +738,7 @@ function renderGrid(){
   }
 }
 function triggerSingle(idx){
+  ensureHeic(); // 后台预载解码库，与用户挑文件并行，第一张 HEIC 不再等下载
   const input=document.createElement('input');
   input.type='file'; input.accept='image/*,.heic,.heif';
   input.onchange=()=>{ if(input.files[0]) handleFile(input.files[0],idx); };
@@ -999,7 +1012,7 @@ function init(){
   $('trackClear').addEventListener('click',clearTrack);
 
   // 照片
-  $('batchBtn').addEventListener('click',()=>$('batchInput').click());
+  $('batchBtn').addEventListener('click',()=>{ ensureHeic(); $('batchInput').click(); });
   $('batchInput').addEventListener('change',e=>{ fillFrom(Array.from(e.target.files)); e.target.value=''; });
   $('clearBtn').addEventListener('click',()=>{ images.fill(null); imageCache.clear(); renderGrid(); updatePreview(); });
   bindDrop($('grid9'),f=>f.type.startsWith('image/')||/\.(heic|heif|jpg|jpeg|png|webp)$/i.test(f.name),fs=>fillFrom(fs));
