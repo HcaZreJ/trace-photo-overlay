@@ -383,6 +383,36 @@ function ensureHeic(){
   });
   return heicLoading;
 }
+// HEIC 解码 Worker 池：把 heic2any 放到后台线程，多核并行、不卡界面。纯浏览器特性、无后端、不联网（仍 importScripts 本地 heic2any）。
+// heic2any 编码 JPEG 时依赖 document.createElement('canvas')，Worker 里无 DOM，故用 OffscreenCanvas 打垫片（已实测可行）。
+// file:// 下浏览器禁止 Worker 跨源 importScripts，HEIC_WORKER_N=0 时自动回退主线程。
+const HEIC_WORKER_N = (typeof Worker==='function' && typeof OffscreenCanvas==='function' && location.protocol!=='file:')
+  ? Math.min(navigator.hardwareConcurrency||2, 4) : 0;
+let _heicPool;
+function heicPool(){
+  if(_heicPool!==undefined) return _heicPool;
+  if(!HEIC_WORKER_N) return (_heicPool=null);
+  const src="self.window=self;self.document={title:'',createElement:t=>{if(t!=='canvas')return{};const o=new OffscreenCanvas(1,1);o.toBlob=(cb,ty,q)=>o.convertToBlob({type:ty||'image/png',quality:q}).then(cb).catch(()=>cb(null));return o;}};"
+    +"self.onmessage=async e=>{const d=e.data;if(d.warm){try{if(!self.heic2any)importScripts(d.scriptUrl);}catch(_){}self.postMessage({warm:true});return;}try{if(!self.heic2any)importScripts(d.scriptUrl);const out=await heic2any({blob:new Blob([d.buffer],{type:'image/heic'}),toType:'image/jpeg',quality:0.9});const r=Array.isArray(out)?out[0]:out;const ab=await r.arrayBuffer();self.postMessage({id:d.id,ok:true,buffer:ab},[ab]);}catch(err){self.postMessage({id:d.id,ok:false,error:String(err&&err.message||err)});}};";
+  try{
+    const blobUrl=URL.createObjectURL(new Blob([src],{type:'text/javascript'}));
+    const scriptUrl=new URL('./heic2any.min.js',location.href).href;
+    const workers=[],jobs=new Map(),q=[]; let seq=0,warmed=false;
+    const pump=()=>{ for(const w of workers){ if(w._busy) continue; const job=q.shift(); if(!job) break; w._busy=true; jobs.set(job.id,{job,w}); w.postMessage({id:job.id,buffer:job.buffer,scriptUrl},[job.buffer]); } };
+    for(let i=0;i<HEIC_WORKER_N;i++){
+      const w=new Worker(blobUrl); w._busy=false;
+      w.onmessage=ev=>{ if(ev.data.warm) return; const rec=jobs.get(ev.data.id); if(!rec) return; jobs.delete(ev.data.id); rec.w._busy=false; ev.data.ok?rec.job.resolve(new Blob([ev.data.buffer],{type:'image/jpeg'})):rec.job.reject(new Error(ev.data.error||'worker decode failed')); pump(); };
+      w.onerror=()=>{}; workers.push(w);
+    }
+    _heicPool={
+      run:file=>file.arrayBuffer().then(ab=>new Promise((resolve,reject)=>{ q.push({id:++seq,buffer:ab,resolve,reject}); pump(); })),
+      warm:()=>{ if(warmed) return; warmed=true; for(const w of workers) w.postMessage({warm:true,scriptUrl}); },
+    };
+  }catch(_){ _heicPool=null; }
+  return _heicPool;
+}
+// 预热：点上传时就把解码库装进 Worker（或主线程兜底），与挑文件并行，第一张 HEIC 不再等下载
+function warmHeic(){ const p=heicPool(); if(p) p.warm(); else ensureHeic(); }
 // 原生快路径：Safari/iOS 的浏览器自带 HEIC 解码，createImageBitmap 可直接解 → 秒级，跳过 heic2any。
 // 其它浏览器（Chrome/Firefox）不支持，会抛错，返回 null 交给 heic2any 兜底。
 async function decodeHeicNative(file){
@@ -399,7 +429,9 @@ async function autoConvertPhoto(file){
   if(name.endsWith('.heic')||name.endsWith('.heif')||file.type==='image/heic'||file.type==='image/heif'){
     showBusy('转换 HEIC 中…');
     const nat=await decodeHeicNative(file); if(nat) return nat; // Safari/iOS 原生秒解
-    if(await ensureHeic() && window.heic2any){
+    const pool=heicPool();
+    if(pool){ try{ return await pool.run(file); }catch(_){} } // Chrome 等：Worker 池并行解码，不卡界面
+    if(await ensureHeic() && window.heic2any){             // 主线程兜底（file:// 或 Worker 不可用）
       try{
         const out=await heic2any({blob:file,toType:'image/jpeg',quality:0.9});
         return Array.isArray(out)?out[0]:out;
@@ -738,7 +770,7 @@ function renderGrid(){
   }
 }
 function triggerSingle(idx){
-  ensureHeic(); // 后台预载解码库，与用户挑文件并行，第一张 HEIC 不再等下载
+  warmHeic(); // 后台预热解码库（Worker 池或主线程），与用户挑文件并行，第一张 HEIC 不再等下载
   const input=document.createElement('input');
   input.type='file'; input.accept='image/*,.heic,.heif';
   input.onchange=()=>{ if(input.files[0]) handleFile(input.files[0],idx); };
@@ -1012,7 +1044,7 @@ function init(){
   $('trackClear').addEventListener('click',clearTrack);
 
   // 照片
-  $('batchBtn').addEventListener('click',()=>{ ensureHeic(); $('batchInput').click(); });
+  $('batchBtn').addEventListener('click',()=>{ warmHeic(); $('batchInput').click(); });
   $('batchInput').addEventListener('change',e=>{ fillFrom(Array.from(e.target.files)); e.target.value=''; });
   $('clearBtn').addEventListener('click',()=>{ images.fill(null); imageCache.clear(); renderGrid(); updatePreview(); });
   bindDrop($('grid9'),f=>f.type.startsWith('image/')||/\.(heic|heif|jpg|jpeg|png|webp)$/i.test(f.name),fs=>fillFrom(fs));
