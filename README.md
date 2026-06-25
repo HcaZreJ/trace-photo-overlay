@@ -54,4 +54,4 @@ node --test core.test.mjs fit.test.mjs
 
 ## License
 
-[MIT](./LICENSE) · 灵感来自 [旅图九格](http://43.136.132.103:3000/)
+[PolyForm Noncommercial 1.0.0](./LICENSE)（仅限非商业用途）· 灵感来自 [旅图九格](http://43.136.132.103:3000/)
