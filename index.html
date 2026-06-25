@@ -319,7 +319,7 @@ const METRICS=[
   {key:'speed',label:'均速'},{key:'pace',label:'配速'},{key:'elevation',label:'爬升'},
 ];
 let textOverlay={ enabled:false, cell:0, title:'', date:'', textColor:'#ffffff', strokeColor:'#000000',
-  font:'-apple-system,"PingFang SC","Microsoft YaHei",sans-serif', align:'left', hpos:'left',
+  font:'-apple-system,"PingFang SC","Microsoft YaHei",sans-serif', align:'center', hpos:'left',
   metrics:{ distance:{show:true,value:''}, duration:{show:true,value:''},
             speed:{show:false,value:''}, pace:{show:false,value:''}, elevation:{show:true,value:''} } };
 const imageCache = new Map();
@@ -720,6 +720,22 @@ function triggerSingle(idx){
 
 // ==================== 合成预览 ====================
 // 在照片上画 Strava 风格数据卡：标题/日期 + 竖排指标(标签小字+数值大字) + 右下角轨迹缩略图
+// 文字块水平布局（位置/对齐解耦）— 与 core.mjs 同名函数同实现（已单测）。
+// 位置决定整块贴左/中/右并恒夹在 [pad,width-pad] 内；对齐只决定块内各行排列，不会推出画布。
+function layoutTextBlockX(lineWidths,{hpos,align,pad,width}){
+  const avail=Math.max(0,width-pad*2);
+  const blockWidth=lineWidths.length?Math.min(Math.max(...lineWidths),avail):0;
+  let blockX0;
+  if(hpos==='center') blockX0=(width-blockWidth)/2;
+  else if(hpos==='right') blockX0=width-pad-blockWidth;
+  else blockX0=pad;
+  const lines=lineWidths.map(()=>{
+    if(align==='right') return {x:blockX0+blockWidth,textAlign:'right'};
+    if(align==='center') return {x:blockX0+blockWidth/2,textAlign:'center'};
+    return {x:blockX0,textAlign:'left'};
+  });
+  return {blockX0,blockWidth,lines};
+}
 function drawTextCard(ctx){
   const t=textOverlay;
   const w=ctx.canvas.width,h=ctx.canvas.height,L=Math.min(w,h);
@@ -735,24 +751,32 @@ function drawTextCard(ctx){
     lines.push({text:it.value,size:L*0.078,bold:1,gap:L*0.007});
   }
   const pad=L*0.06;
+  // 竖向：内容过高时整体等比缩小，塞进可用高度
   let totalH=0; for(const ln of lines) totalH+=ln.gap+ln.size;
-  // 内容过多超出图片时整体等比缩小字号，塞进可用高度
   const maxH=h-pad*2;
   if(totalH>maxH){ const s=maxH/totalH; for(const ln of lines){ ln.size*=s; ln.gap*=s; } totalH=maxH; }
-  let y=h-pad-totalH;
-  const ax = t.hpos==='center'?w/2 : t.hpos==='right'?w-pad : pad;
   ctx.save();
-  ctx.textAlign=t.align||'left'; ctx.textBaseline='top'; ctx.lineJoin='round'; ctx.miterLimit=2;
-  for(const ln of lines){
+  ctx.textBaseline='top'; ctx.lineJoin='round'; ctx.miterLimit=2;
+  const fontOf=ln=>`${ln.bold?800:600} ${Math.round(ln.size)}px ${t.font}`;
+  // 横向：量出每行宽度；最宽行超过可用宽则整体再缩，保证左右都不溢出
+  let widths=lines.map(ln=>{ ctx.font=fontOf(ln); return ctx.measureText(ln.text).width; });
+  const avail=w-pad*2, maxW=widths.length?Math.max(...widths):0;
+  if(maxW>avail){ const s=avail/maxW; for(const ln of lines){ ln.size*=s; ln.gap*=s; } widths=widths.map(x=>x*s); totalH=0; for(const ln of lines) totalH+=ln.gap+ln.size; }
+  // 位置=文字块贴哪侧（恒在图内），对齐=块内各行排列
+  const layout=layoutTextBlockX(widths,{hpos:t.hpos,align:t.align,pad,width:w});
+  let y=h-pad-totalH;
+  for(let i=0;i<lines.length;i++){
+    const ln=lines[i], lx=layout.lines[i];
     y+=ln.gap;
-    ctx.font=`${ln.bold?800:600} ${Math.round(ln.size)}px ${t.font}`;
+    ctx.textAlign=lx.textAlign;
+    ctx.font=fontOf(ln);
     // 描边+阴影保证任意背景可读，不压暗整张图；颜色/字体/对齐由用户选取
     ctx.lineWidth=Math.max(2,ln.size*0.1); ctx.strokeStyle=t.strokeColor;
     ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=L*0.02; ctx.shadowOffsetY=L*0.0025;
-    ctx.globalAlpha=1; ctx.strokeText(ln.text,ax,y);
+    ctx.globalAlpha=1; ctx.strokeText(ln.text,lx.x,y);
     ctx.shadowColor='transparent';
     ctx.fillStyle=t.textColor; ctx.globalAlpha=ln.dim?0.92:1;
-    ctx.fillText(ln.text,ax,y);
+    ctx.fillText(ln.text,lx.x,y);
     y+=ln.size;
   }
   ctx.restore();
@@ -976,9 +1000,20 @@ function init(){
     $('textFields').classList.toggle('show',textOverlay.enabled);
     updatePreview();
   };
-  ['textEnable','textTitle','textDate','textCell','textFont','textHpos','textAlign'].forEach(id=>{ $(id).addEventListener('input',syncText); $(id).addEventListener('change',syncText); });
+  // 对齐选项随位置联动：靠左→左对齐/居中，居中→居中，靠右→右对齐/居中
+  // （只留下不会把文字推出图、且好看的组合）
+  const ALIGN_BY_HPOS={ left:[['left','左对齐'],['center','居中']], center:[['center','居中']], right:[['right','右对齐'],['center','居中']] };
+  const refreshAlignOptions=(desired)=>{
+    const opts=ALIGN_BY_HPOS[$('textHpos').value]||ALIGN_BY_HPOS.left;
+    const want=desired??$('textAlign').value;
+    const keep=opts.some(o=>o[0]===want)?want:opts[0][0];
+    $('textAlign').innerHTML=opts.map(([v,l])=>`<option value="${v}"${v===keep?' selected':''}>${l}</option>`).join('');
+  };
+  ['textEnable','textTitle','textDate','textCell','textFont','textAlign'].forEach(id=>{ $(id).addEventListener('input',syncText); $(id).addEventListener('change',syncText); });
+  $('textHpos').addEventListener('change',()=>{ refreshAlignOptions(); syncText(); });
   mg.addEventListener('input',syncText); mg.addEventListener('change',syncText);
 
+  $('textHpos').value=textOverlay.hpos; refreshAlignOptions(textOverlay.align);
   renderGrid(); updatePreview();
 }
 function setMode(m){

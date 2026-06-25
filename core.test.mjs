@@ -8,6 +8,7 @@ import {
   mercatorX, mercatorY, smoothTrack, projectTrack,
   extractGeoJSONCoords, extractTextCoords, crc32, buildStoreZip, trackDistanceKm,
   trackDurationSec, avgSpeedKmh, paceSecPerKm, elevationGainM, formatDuration, formatPace,
+  layoutTextBlockX,
 } from './core.mjs';
 
 // ==================== 运动指标 ====================
@@ -209,4 +210,66 @@ test('buildStoreZip: 产出可被系统 unzip 校验并解出原内容', () => {
   assert.equal(c1, 'hello 旅图');
   const c2 = execSync(`unzip -p ${zipPath} pic_2.txt`).toString();
   assert.equal(c2, 'second file content');
+});
+
+// ==================== 文字块水平布局（位置 / 对齐 解耦） ====================
+// 每行实际绘制区间 [left,right]：textAlign 决定 x 是行的左/中/右锚点。
+function lineExtents(res, widths) {
+  return res.lines.map((ln, i) => {
+    const w = widths[i];
+    const left = ln.textAlign === 'left' ? ln.x : ln.textAlign === 'center' ? ln.x - w / 2 : ln.x - w;
+    return { left, right: left + w };
+  });
+}
+const _W = 1000, _PAD = 60;
+const _COMBOS = [];
+for (const hpos of ['left', 'center', 'right'])
+  for (const align of ['left', 'center', 'right']) _COMBOS.push({ hpos, align });
+
+test('layoutTextBlockX: 任意 位置×对齐 每行都落在 [pad, width-pad] 内（修复越界 bug）', () => {
+  const widths = [300, 120, 260, 80];
+  for (const c of _COMBOS) {
+    const res = layoutTextBlockX(widths, { ...c, pad: _PAD, width: _W });
+    for (const e of lineExtents(res, widths)) {
+      assert.ok(e.left >= _PAD - 1e-6, `${c.hpos}+${c.align}: left ${e.left} < pad`);
+      assert.ok(e.right <= _W - _PAD + 1e-6, `${c.hpos}+${c.align}: right ${e.right} > width-pad`);
+    }
+  }
+});
+test('layoutTextBlockX: 靠左 → 块左缘贴 pad，左对齐行锚在 pad', () => {
+  const res = layoutTextBlockX([300, 120], { hpos: 'left', align: 'left', pad: _PAD, width: _W });
+  assert.equal(res.blockX0, _PAD);
+  assert.equal(res.lines[0].x, _PAD);
+  assert.equal(res.lines[0].textAlign, 'left');
+});
+test('layoutTextBlockX: 靠右+右对齐 → 块右缘贴 width-pad', () => {
+  const res = layoutTextBlockX([300, 120], { hpos: 'right', align: 'right', pad: _PAD, width: _W });
+  assert.equal(res.blockX0 + res.blockWidth, _W - _PAD);
+  assert.equal(res.lines[0].x, _W - _PAD);
+  assert.equal(res.lines[0].textAlign, 'right');
+});
+test('layoutTextBlockX: 靠左+居中 → 围绕块中心，窄行不越左界（旧 bug 场景）', () => {
+  const res = layoutTextBlockX([300, 80], { hpos: 'left', align: 'center', pad: _PAD, width: _W });
+  const center = _PAD + 150; // 块=[pad,pad+300]
+  assert.equal(res.lines[0].x, center);
+  assert.equal(res.lines[0].textAlign, 'center');
+  assert.ok(center - 40 >= _PAD); // 窄行(80)左缘
+});
+test('layoutTextBlockX: 居中 → 块整体居中', () => {
+  const res = layoutTextBlockX([300], { hpos: 'center', align: 'center', pad: _PAD, width: _W });
+  assert.equal(res.blockX0, (_W - 300) / 2);
+  assert.equal(res.lines[0].x, _W / 2);
+});
+test('layoutTextBlockX: 空行列表不崩溃', () => {
+  const res = layoutTextBlockX([], { hpos: 'left', align: 'left', pad: _PAD, width: _W });
+  assert.equal(res.blockWidth, 0);
+  assert.deepEqual(res.lines, []);
+});
+test('layoutTextBlockX: 行宽超出可用宽 → 块宽夹到 avail 且仍居内', () => {
+  for (const c of _COMBOS) {
+    const res = layoutTextBlockX([5000], { ...c, pad: _PAD, width: _W });
+    assert.equal(res.blockWidth, _W - 2 * _PAD);
+    assert.ok(res.blockX0 >= _PAD - 1e-6);
+    assert.ok(res.blockX0 + res.blockWidth <= _W - _PAD + 1e-6);
+  }
 });

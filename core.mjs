@@ -177,6 +177,26 @@ export function extractTextCoords(text) {
   return coords;
 }
 
+// ==================== 文字块水平布局（位置 / 对齐 解耦） ====================
+// 把整块文字贴在图的 hpos 侧，并永远夹在可用区间 [pad, width-pad] 内；
+// align 只决定块内各行如何对齐，不再把文字推出画布（修复旧版"位置+对齐"互相打架越界的 bug）。
+// 入参 lineWidths 为各行已按字号 measureText 得到的像素宽（调用方需先做宽度缩放保证 ≤ width-2*pad）。
+// 返回 { blockX0, blockWidth, lines:[{x, textAlign}] }，x 为传给 ctx.fillText 的锚点。
+export function layoutTextBlockX(lineWidths, { hpos, align, pad, width }) {
+  const avail = Math.max(0, width - pad * 2);
+  const blockWidth = lineWidths.length ? Math.min(Math.max(...lineWidths), avail) : 0;
+  let blockX0;
+  if (hpos === 'center') blockX0 = (width - blockWidth) / 2;
+  else if (hpos === 'right') blockX0 = width - pad - blockWidth;
+  else blockX0 = pad; // left
+  const lines = lineWidths.map(() => {
+    if (align === 'right') return { x: blockX0 + blockWidth, textAlign: 'right' };
+    if (align === 'center') return { x: blockX0 + blockWidth / 2, textAlign: 'center' };
+    return { x: blockX0, textAlign: 'left' };
+  });
+  return { blockX0, blockWidth, lines };
+}
+
 // ==================== 零依赖 ZIP（STORE 模式，无压缩） ====================
 // PNG/JPEG 已是压缩数据，STORE 模式打包无损且实现简单，彻底摆脱 JSZip CDN 依赖。
 const CRC_TABLE = (() => {
