@@ -525,8 +525,8 @@ function extractTCXCoords(xml){
 }
 function extractKMLCoords(xml){
   const track=[];
-  const trackEl=xml.querySelector('gx\\:Track, Track');
-  if(trackEl){
+  // 遍历全部 gx:Track / Track 段并首尾拼接（多段 KML 含多个 gx:Track，每段 when 各自索引）
+  xml.querySelectorAll('gx\\:Track, Track').forEach(trackEl=>{
     const whens=[...trackEl.querySelectorAll('when')].map(w=>Date.parse(w.textContent.trim()));
     [...trackEl.querySelectorAll('gx\\:coord, coord')].forEach((el,i)=>{
       const p=el.textContent.trim().split(/\s+/);
@@ -537,7 +537,7 @@ function extractKMLCoords(xml){
         track.push(pt);
       }
     });
-  }
+  });
   if(track.length) return track;
   const line=[];
   xml.querySelectorAll('LineString coordinates, Polygon coordinates').forEach(el=>{
