@@ -752,45 +752,48 @@ function layoutTextBlockX(lineWidths,{hpos,align,pad,width}){
 }
 function drawTextCard(ctx){
   const t=textOverlay;
-  const w=ctx.canvas.width,h=ctx.canvas.height,L=Math.min(w,h);
+  const w=ctx.canvas.width,h=ctx.canvas.height;
+  // 文字始终排进居中的 1:1 正方形区域（与轨迹叠层同框）。非 1:1 照片在九宫格里只显示中心方形缩略图，
+  // 限定到该方形才能保证标题/数据都被一眼看见，且预览与导出一致。
+  const S=Math.min(w,h), ox=(w-S)/2, oy=(h-S)/2;
   const items=METRICS.filter(m=>t.metrics[m.key].show && t.metrics[m.key].value.trim())
                      .map(m=>({label:m.label,value:t.metrics[m.key].value.trim()}));
   if(!t.title && !t.date && !items.length) return;
   // 逐行布局（顶对齐）：标签小字 + 数值大字，组间留间距，标签紧贴其数值
   const lines=[];
-  if(t.title) lines.push({text:t.title,size:L*0.088,bold:1,gap:0});
-  if(t.date)  lines.push({text:t.date,size:L*0.046,dim:1,gap:L*0.012});
+  if(t.title) lines.push({text:t.title,size:S*0.088,bold:1,gap:0});
+  if(t.date)  lines.push({text:t.date,size:S*0.046,dim:1,gap:S*0.012});
   for(const it of items){
-    lines.push({text:it.label,size:L*0.043,dim:1,gap:L*0.034});
-    lines.push({text:it.value,size:L*0.078,bold:1,gap:L*0.007});
+    lines.push({text:it.label,size:S*0.043,dim:1,gap:S*0.034});
+    lines.push({text:it.value,size:S*0.078,bold:1,gap:S*0.007});
   }
-  const pad=L*0.06;
-  // 竖向：内容过高时整体等比缩小，塞进可用高度
+  const pad=S*0.06;
+  // 竖向：内容过高时整体等比缩小，塞进方形可用高度
   let totalH=0; for(const ln of lines) totalH+=ln.gap+ln.size;
-  const maxH=h-pad*2;
+  const maxH=S-pad*2;
   if(totalH>maxH){ const s=maxH/totalH; for(const ln of lines){ ln.size*=s; ln.gap*=s; } totalH=maxH; }
   ctx.save();
   ctx.textBaseline='top'; ctx.lineJoin='round'; ctx.miterLimit=2;
   const fontOf=ln=>`${ln.bold?800:600} ${Math.round(ln.size)}px ${t.font}`;
   // 横向：量出每行宽度；最宽行超过可用宽则整体再缩，保证左右都不溢出
   let widths=lines.map(ln=>{ ctx.font=fontOf(ln); return ctx.measureText(ln.text).width; });
-  const avail=w-pad*2, maxW=widths.length?Math.max(...widths):0;
+  const avail=S-pad*2, maxW=widths.length?Math.max(...widths):0;
   if(maxW>avail){ const s=avail/maxW; for(const ln of lines){ ln.size*=s; ln.gap*=s; } widths=widths.map(x=>x*s); totalH=0; for(const ln of lines) totalH+=ln.gap+ln.size; }
-  // 位置=文字块贴哪侧（恒在图内），对齐=块内各行排列
-  const layout=layoutTextBlockX(widths,{hpos:t.hpos,align:t.align,pad,width:w});
-  let y=h-pad-totalH;
+  // 位置=文字块贴方形哪侧（恒在方形内），对齐=块内各行排列；最后整体平移到居中方形
+  const layout=layoutTextBlockX(widths,{hpos:t.hpos,align:t.align,pad,width:S});
+  let y=oy+S-pad-totalH;
   for(let i=0;i<lines.length;i++){
-    const ln=lines[i], lx=layout.lines[i];
+    const ln=lines[i], lx=layout.lines[i], x=ox+lx.x;
     y+=ln.gap;
     ctx.textAlign=lx.textAlign;
     ctx.font=fontOf(ln);
     // 描边+阴影保证任意背景可读，不压暗整张图；颜色/字体/对齐由用户选取
     ctx.lineWidth=Math.max(2,ln.size*0.1); ctx.strokeStyle=t.strokeColor;
-    ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=L*0.02; ctx.shadowOffsetY=L*0.0025;
-    ctx.globalAlpha=1; ctx.strokeText(ln.text,lx.x,y);
+    ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=S*0.02; ctx.shadowOffsetY=S*0.0025;
+    ctx.globalAlpha=1; ctx.strokeText(ln.text,x,y);
     ctx.shadowColor='transparent';
     ctx.fillStyle=t.textColor; ctx.globalAlpha=ln.dim?0.92:1;
-    ctx.fillText(ln.text,lx.x,y);
+    ctx.fillText(ln.text,x,y);
     y+=ln.size;
   }
   ctx.restore();
