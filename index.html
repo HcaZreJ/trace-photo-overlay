@@ -184,6 +184,10 @@ input[type=color]{width:38px;height:30px;border:1px solid var(--border);border-r
           <input type="range" id="trackWidth" min="4" max="40" value="14">
         </div>
         <div class="ctrl-row">
+          <label>透明度</label>
+          <input type="range" id="trackOpacity" min="10" max="100" value="100">
+        </div>
+        <div class="ctrl-row">
           <button class="btn ghost" id="trackClear">清除轨迹</button>
         </div>
       </div>
@@ -243,6 +247,10 @@ input[type=color]{width:38px;height:30px;border:1px solid var(--border);border-r
         <span class="sl">描边</span>
         <input type="color" id="strokeColorPick" value="#000000">
         <input type="text" id="strokeColorHex" class="hex" value="#000000">
+      </div>
+      <div class="style-row">
+        <span class="sl">透明度</span>
+        <input type="range" id="textOpacity" min="10" max="100" value="100" style="flex:1">
       </div>
       <div class="ctrl-row"><label>叠加到</label><select id="textCell"></select></div>
     </div>
@@ -317,11 +325,12 @@ let trackPoints = null;                   // [{lng,lat,ele?,time?}] 所有段合
 let trackFiles = [];                      // [{name,format,points}] 按顺序首尾拼接
 let overlayCells = new Array(9).fill(null); // 9 个轨迹叠层 canvas
 let cropMode = 'crop';                    // 'crop' | 'keep'
+let trackOpacity = 1;                     // 轨迹叠层透明度 0..1
 const METRICS=[
   {key:'distance',label:'距离'},{key:'duration',label:'时长'},
   {key:'speed',label:'均速'},{key:'pace',label:'配速'},{key:'elevation',label:'爬升'},
 ];
-let textOverlay={ enabled:false, cell:0, title:'', date:'', textColor:'#ffffff', strokeColor:'#000000',
+let textOverlay={ enabled:false, cell:0, title:'', date:'', textColor:'#ffffff', strokeColor:'#000000', opacity:1,
   font:'Inter,"PingFang SC","Microsoft YaHei",sans-serif', align:'center', hpos:'left',
   metrics:{ distance:{show:true,value:''}, duration:{show:true,value:''},
             speed:{show:false,value:''}, pace:{show:false,value:''}, elevation:{show:true,value:''} } };
@@ -649,7 +658,9 @@ function renderTrackThumb(){
   ctx.fillStyle='rgba(0,0,0,.3)'; ctx.fillRect(0,0,size,size);
   if(trackPoints){
     const proj=projectTrack(trackPoints,size);
+    ctx.globalAlpha=trackOpacity;
     strokePath(ctx,proj,$('trackColor').value,Math.max(1.5,+$('trackWidth').value*size/CUSTOM_FULL_SIZE));
+    ctx.globalAlpha=1;
   }
   ctx.strokeStyle='rgba(255,255,255,.15)'; ctx.lineWidth=.5;
   for(let i=1;i<3;i++){
@@ -756,6 +767,7 @@ function drawTextCard(ctx){
   // 文字始终排进居中的 1:1 正方形区域（与轨迹叠层同框）。非 1:1 照片在九宫格里只显示中心方形缩略图，
   // 限定到该方形才能保证标题/数据都被一眼看见，且预览与导出一致。
   const S=Math.min(w,h), ox=(w-S)/2, oy=(h-S)/2;
+  const op=t.opacity==null?1:t.opacity;
   const items=METRICS.filter(m=>t.metrics[m.key].show && t.metrics[m.key].value.trim())
                      .map(m=>({label:m.label,value:t.metrics[m.key].value.trim()}));
   if(!t.title && !t.date && !items.length) return;
@@ -787,12 +799,12 @@ function drawTextCard(ctx){
     y+=ln.gap;
     ctx.textAlign=lx.textAlign;
     ctx.font=fontOf(ln);
-    // 描边+阴影保证任意背景可读，不压暗整张图；颜色/字体/对齐由用户选取
+    // 描边+阴影保证任意背景可读，不压暗整张图；颜色/字体/对齐/透明度由用户选取
     ctx.lineWidth=Math.max(2,ln.size*0.1); ctx.strokeStyle=t.strokeColor;
     ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=S*0.02; ctx.shadowOffsetY=S*0.0025;
-    ctx.globalAlpha=1; ctx.strokeText(ln.text,x,y);
+    ctx.globalAlpha=op; ctx.strokeText(ln.text,x,y);
     ctx.shadowColor='transparent';
-    ctx.fillStyle=t.textColor; ctx.globalAlpha=ln.dim?0.92:1;
+    ctx.fillStyle=t.textColor; ctx.globalAlpha=(ln.dim?0.92:1)*op;
     ctx.fillText(ln.text,x,y);
     y+=ln.size;
   }
@@ -805,11 +817,11 @@ function drawCell(ctx,userImg,overlay,idx){
   if(cropMode==='keep'){
     const s=Math.min(cw/iw,ch/ih), dw=iw*s, dh=ih*s, dx=(cw-dw)/2, dy=(ch-dh)/2;
     ctx.drawImage(userImg,dx,dy,dw,dh);
-    if(overlay){ const side=Math.min(dw,dh); ctx.drawImage(overlay,(cw-side)/2,(ch-side)/2,side,side); }
+    if(overlay){ const side=Math.min(dw,dh); ctx.globalAlpha=trackOpacity; ctx.drawImage(overlay,(cw-side)/2,(ch-side)/2,side,side); ctx.globalAlpha=1; }
   }else{
     const side=Math.min(iw,ih), sx=(iw-side)/2, sy=(ih-side)/2;
     ctx.drawImage(userImg,sx,sy,side,side,0,0,cw,ch);
-    if(overlay) ctx.drawImage(overlay,0,0,cw,ch);
+    if(overlay){ ctx.globalAlpha=trackOpacity; ctx.drawImage(overlay,0,0,cw,ch); ctx.globalAlpha=1; }
   }
   if(textOverlay.enabled && idx===textOverlay.cell) drawTextCard(ctx);
 }
@@ -838,11 +850,11 @@ async function compositeHighRes(idx){
   const overlay=overlayCells[idx];
   if(cropMode==='keep'){
     c.width=iw;c.height=ih; ctx.drawImage(img,0,0,iw,ih);
-    if(overlay){ const side=Math.min(iw,ih); ctx.drawImage(overlay,(iw-side)/2,(ih-side)/2,side,side); }
+    if(overlay){ const side=Math.min(iw,ih); ctx.globalAlpha=trackOpacity; ctx.drawImage(overlay,(iw-side)/2,(ih-side)/2,side,side); ctx.globalAlpha=1; }
   }else{
     const side=Math.min(iw,ih), sx=(iw-side)/2, sy=(ih-side)/2;
     c.width=c.height=side; ctx.drawImage(img,sx,sy,side,side,0,0,side,side);
-    if(overlay) ctx.drawImage(overlay,0,0,side,side);
+    if(overlay){ ctx.globalAlpha=trackOpacity; ctx.drawImage(overlay,0,0,side,side); ctx.globalAlpha=1; }
   }
   if(textOverlay.enabled && idx===textOverlay.cell) drawTextCard(ctx);
   return c;
@@ -983,6 +995,7 @@ function init(){
   bindColorPair('textColorPick','textColorHex',v=>{ textOverlay.textColor=v; updatePreview(); });
   bindColorPair('strokeColorPick','strokeColorHex',v=>{ textOverlay.strokeColor=v; updatePreview(); });
   $('trackWidth').addEventListener('input',debounce(()=>{ rebuildOverlay(); renderTrackThumb(); updatePreview(); },120));
+  $('trackOpacity').addEventListener('input',()=>{ trackOpacity=+$('trackOpacity').value/100; renderTrackThumb(); updatePreview(); });
   $('trackClear').addEventListener('click',clearTrack);
 
   // 照片
@@ -1013,6 +1026,7 @@ function init(){
     textOverlay.date=$('textDate').value;
     textOverlay.cell=+$('textCell').value;
     textOverlay.font=$('textFont').value; textOverlay.align=$('textAlign').value; textOverlay.hpos=$('textHpos').value;
+    textOverlay.opacity=+$('textOpacity').value/100;
     mg.querySelectorAll('input[type=checkbox]').forEach(cb=>{ textOverlay.metrics[cb.dataset.k].show=cb.checked; });
     mg.querySelectorAll('.mv').forEach(inp=>{ textOverlay.metrics[inp.dataset.k].value=inp.value; });
     $('textFields').classList.toggle('show',textOverlay.enabled);
@@ -1027,7 +1041,7 @@ function init(){
     const keep=opts.some(o=>o[0]===want)?want:opts[0][0];
     $('textAlign').innerHTML=opts.map(([v,l])=>`<option value="${v}"${v===keep?' selected':''}>${l}</option>`).join('');
   };
-  ['textEnable','textTitle','textDate','textCell','textFont','textAlign'].forEach(id=>{ $(id).addEventListener('input',syncText); $(id).addEventListener('change',syncText); });
+  ['textEnable','textTitle','textDate','textCell','textFont','textAlign','textOpacity'].forEach(id=>{ $(id).addEventListener('input',syncText); $(id).addEventListener('change',syncText); });
   $('textHpos').addEventListener('change',()=>{ refreshAlignOptions(); syncText(); });
   mg.addEventListener('input',syncText); mg.addEventListener('change',syncText);
 
