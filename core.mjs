@@ -152,6 +152,7 @@ export function extractGeoJSONCoords(geojson) {
     }
     if (obj.features && Array.isArray(obj.features)) obj.features.forEach(walk);
     if (obj.geometry) walk(obj.geometry);
+    if (Array.isArray(obj.geometries)) obj.geometries.forEach(walk); // GeometryCollection
   }
   walk(geojson);
   return points;

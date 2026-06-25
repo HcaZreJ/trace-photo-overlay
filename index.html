@@ -563,6 +563,7 @@ function extractGeoJSONCoords(geojson){
     if(o.type==='MultiLineString'&&Array.isArray(o.coordinates)) for(const l of o.coordinates) for(const c of l) if(c.length>=2) pts.push(mk(c));
     if(o.features) o.features.forEach(walk);
     if(o.geometry) walk(o.geometry);
+    if(Array.isArray(o.geometries)) o.geometries.forEach(walk); // GeometryCollection
   })(geojson);
   return pts;
 }
